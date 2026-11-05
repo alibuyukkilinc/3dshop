@@ -15,7 +15,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset --force",
     "admin:create": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/admin-create.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "sources": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/sources.ts"
   },
   "dependencies": {
     "@dtd/contracts": "workspace:*",

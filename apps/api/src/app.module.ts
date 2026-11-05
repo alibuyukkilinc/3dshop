@@ -2,12 +2,15 @@ import { Module } from '@nestjs/common';
 import { DbModule } from './infra/db/db.module.js';
 import { HealthController } from './infra/http/health.controller.js';
 import { AuditModule } from './modules/audit/public/index.js';
+import { CatalogModule } from './modules/catalog/public/index.js';
+import { CommerceModule } from './modules/commerce/public/index.js';
 import { IdentityModule } from './modules/identity/public/index.js';
+import { IntegrationModule } from './modules/integration/public/index.js';
 import { OpsModule } from './modules/ops/public/index.js';
 import { PlatformModule } from './modules/platform/public/index.js';
 
 @Module({
-  imports: [DbModule, PlatformModule, AuditModule, IdentityModule, OpsModule],
+  imports: [DbModule, PlatformModule, AuditModule, IdentityModule, OpsModule, CommerceModule, CatalogModule, IntegrationModule],
   controllers: [HealthController],
 })
 export class AppModule {}

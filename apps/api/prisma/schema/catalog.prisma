@@ -1,0 +1,138 @@
+// Modül: modules/catalog. Kaynak sitelerin ürün aynası (A4, K41). Fiyat ve stok kaynaktan gelir; platform
+// hesaplamaz. Alış fiyatı (buy_price) ve tedarikçi bu şemada YOKTUR. store_id ve source_site_id başka
+// modüllerdedir: yalnız kimlikle (K32). Cortex: katalog.
+
+model CatalogProduct {
+  id               String                  @id @db.Uuid
+  storeId          String                  @map("store_id") @db.Uuid
+  sourceSiteId     String                  @map("source_site_id") @db.Uuid
+  externalId       String                  @map("external_id")
+  /// Kaynaktaki marka adı; platform markasına eşleme F1.3 (brand_mappings)
+  brandSourceName  String?                 @map("brand_source_name")
+  sku              String?
+  barcode          String?
+  mpn              String?
+  modelCode        String?                 @map("model_code")
+  /// active | inactive | removed_at_source
+  status           String
+  /// Kaynak birimiyle; birim doğrulaması A6
+  physical         Json?
+  sourceUrl        String?                 @map("source_url")
+  sourceUpdatedAt  String                  @map("source_updated_at")
+  contentHash      String                  @map("content_hash")
+  syncedAt         DateTime                @map("synced_at") @db.Timestamptz(3)
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  version          Int                     @default(1)
+  i18n             CatalogProductI18n[]
+  variants         CatalogVariant[]
+  prices           CatalogPrice[]
+  stock            CatalogStock?
+  media            CatalogMedia[]
+  sourceCategories ProductSourceCategory[]
+
+  @@unique([sourceSiteId, externalId])
+  @@index([storeId, status])
+  @@map("catalog_products")
+  @@schema("catalog")
+}
+
+model CatalogProductI18n {
+  productId       String         @map("product_id") @db.Uuid
+  product         CatalogProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  locale          String
+  name            String
+  /// Kaynaktan gelen HTML; gösterimde temizlenir (F2)
+  descriptionHtml String         @map("description_html")
+
+  @@id([productId, locale])
+  @@map("catalog_products_i18n")
+  @@schema("catalog")
+}
+
+model CatalogVariant {
+  id            String         @id @db.Uuid
+  productId     String         @map("product_id") @db.Uuid
+  product       CatalogProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  externalRef   String         @map("external_ref")
+  optionValues  Json           @map("option_values")
+  sku           String?
+  stockQuantity Int            @map("stock_quantity")
+  sort          Int            @default(0)
+
+  @@unique([productId, externalRef])
+  @@map("catalog_variants")
+  @@schema("catalog")
+}
+
+/// Yalnız kaynağın son fiyatı (K41). variant_ref null = ürün fiyatı.
+model CatalogPrice {
+  id          String         @id @db.Uuid
+  productId   String         @map("product_id") @db.Uuid
+  product     CatalogProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Varyantın external_ref'i; varyant satırları yeniden yazıldığında fiyat bağı kopmasın diye kimlik değil ref
+  variantRef  String?        @map("variant_ref")
+  finalMinor  BigInt         @map("price_final_minor")
+  listMinor   BigInt         @map("price_list_minor")
+  currency    String         @db.Char(3)
+  taxIncluded Boolean        @map("tax_included")
+  validUntil  DateTime?      @map("valid_until") @db.Timestamptz(3)
+  receivedAt  DateTime       @map("received_at") @db.Timestamptz(3)
+
+  @@index([productId])
+  @@index([validUntil])
+  @@map("catalog_prices")
+  @@schema("catalog")
+}
+
+/// Ürün stoğu: fiyat gibi sık değişir, ayrı okunur.
+model CatalogStock {
+  productId  String         @id @map("product_id") @db.Uuid
+  product    CatalogProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity   Int
+  /// in_stock | out_of_stock
+  status     String
+  receivedAt DateTime       @map("received_at") @db.Timestamptz(3)
+
+  @@map("catalog_stock")
+  @@schema("catalog")
+}
+
+model CatalogMedia {
+  id        String         @id @db.Uuid
+  productId String         @map("product_id") @db.Uuid
+  product   CatalogProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// image | video | model_3d
+  kind      String
+  sourceUrl String         @map("source_url")
+  /// CDN'e alındıysa assets kaydı (kimlikle)
+  assetId   String?        @map("asset_id") @db.Uuid
+  sort      Int
+
+  @@index([productId])
+  @@map("catalog_media")
+  @@schema("catalog")
+}
+
+/// Kaynak sitenin kategorisi. eticaret export'u yalnız kategori adını verir: external_id = normalize ad.
+model SourceCategory {
+  id           String                  @id @db.Uuid
+  sourceSiteId String                  @map("source_site_id") @db.Uuid
+  externalId   String                  @map("external_id")
+  name         String
+  products     ProductSourceCategory[]
+
+  @@unique([sourceSiteId, externalId])
+  @@map("source_categories")
+  @@schema("catalog")
+}
+
+model ProductSourceCategory {
+  productId        String         @map("product_id") @db.Uuid
+  product          CatalogProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sourceCategoryId String         @map("source_category_id") @db.Uuid
+  sourceCategory   SourceCategory @relation(fields: [sourceCategoryId], references: [id])
+
+  @@id([productId, sourceCategoryId])
+  @@map("product_source_categories")
+  @@schema("catalog")
+}

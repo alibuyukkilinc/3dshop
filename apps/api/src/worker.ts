@@ -5,6 +5,13 @@ import { loadEnv } from './infra/config/env.js';
 import { DbModule } from './infra/db/db.module.js';
 import { PrismaService } from './infra/db/prisma.service.js';
 import { AuditModule, AuditVerifier } from './modules/audit/public/index.js';
+import {
+  IntegrationModule,
+  OPEN_AFTER,
+  SourceSitesService,
+  SourceSyncService,
+  SyncBusyError,
+} from './modules/integration/public/index.js';
 import { AlertMailer, AlertService, ErrorReporter, OpsWorkerModule } from './modules/ops/public/index.js';
 import { OutboxRelay, PlatformModule } from './modules/platform/public/index.js';
 
@@ -13,11 +20,13 @@ import { OutboxRelay, PlatformModule } from './modules/platform/public/index.js'
  * işler. Kuyruk (Redis + BullMQ, K34) F0.6'da sunucuya Redis kurulunca eklenir; o zamana kadar outbox
  * yoklamayla teslim edilir.
  */
-@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule] })
+@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule, IntegrationModule] })
 class WorkerModule {}
 
 const OUTBOX_POLL_MS = 1_000;
 const HOURLY_MS = 3_600_000;
+/** Kaynak eşitleme zamanlayıcısı: her dakika zamanı gelen siteler sırayla eşitlenir (K42) */
+const SYNC_TICK_MS = 60_000;
 
 async function bootstrap() {
   loadEnv();
@@ -70,10 +79,44 @@ async function bootstrap() {
     }
   }, HOURLY_MS);
 
+  // Kaynak eşitleme (F1.1). Outbox döngüsünden ayrı: uzun süren bir tam eşitleme olay teslimini bekletmez.
+  const sync = app.get(SourceSyncService);
+  const sources = app.get(SourceSitesService);
+  let syncing = false;
+  const syncTick = async () => {
+    if (syncing || stopping) return;
+    syncing = true;
+    try {
+      for (const { code, kind } of await sync.dueSites()) {
+        if (stopping) break;
+        try {
+          await sync.run(code, kind);
+        } catch (e) {
+          if (!(e instanceof SyncBusyError)) logger.warn(`${code} ${kind} eşitleme hatası: ${(e as Error).message}`);
+        }
+      }
+      for (const site of await sources.failing(OPEN_AFTER)) {
+        await alerts.raise({
+          key: `integration:site_failing:${site.code}`,
+          subject: `[${loadEnv().ENV_LABEL}] ${site.code} eşitlenemiyor (${site.consecutiveFailures} kez)`,
+          text: `Son hata: ${site.lastError ?? '-'}
+Site ${site.circuitOpenUntil?.toISOString() ?? '-'} zamanına kadar bekletiliyor.`,
+        });
+      }
+    } catch (e) {
+      await reporter.report(e, 'job', { job: 'source_sync' });
+    } finally {
+      syncing = false;
+    }
+  };
+  const syncTimer = loadEnv().INTEGRATION_SYNC_ENABLED ? setInterval(() => void syncTick(), SYNC_TICK_MS) : null;
+  if (syncTimer) void syncTick();
+
   const stop = () => {
     stopping = true;
     clearInterval(maintenanceTimer);
     clearInterval(nightly);
+    if (syncTimer) clearInterval(syncTimer);
   };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);

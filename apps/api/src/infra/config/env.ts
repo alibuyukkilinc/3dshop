@@ -41,6 +41,9 @@ const EnvSchema = z.object({
     ),
   /** Uyarı konusunda ortam adı (staging / production) */
   ENV_LABEL: z.string().default('yerel'),
+
+  /** Worker kaynak siteleri zamanlı eşitler (F1.1). Yerelde canlı sitelere istek atmamak için false yapılabilir. */
+  INTEGRATION_SYNC_ENABLED: bool.default(true),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

@@ -1,0 +1,56 @@
+// Modül: modules/commerce. Ticari yapı (A2, K39). F1.1'de pilotun ihtiyacı olan alt küme: firma, mağaza,
+// mağaza ↔ kaynak site. Marka, şube ve firma ilişkileri sonraki kartlarda eklenir. Cortex: ticari-yapi.
+
+model Company {
+  id          String   @id @db.Uuid
+  legalName   String   @map("legal_name")
+  displayName String   @map("display_name")
+  taxNumber   String?  @map("tax_number")
+  /// manufacturer | distributor | retailer | service
+  kind        String   @default("retailer")
+  /// active | inactive
+  status      String   @default("active")
+  website     String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version     Int      @default(1)
+  stores      Store[]
+
+  @@map("companies")
+  @@schema("commerce")
+}
+
+model Store {
+  id        String        @id @db.Uuid
+  companyId String        @map("company_id") @db.Uuid
+  company   Company       @relation(fields: [companyId], references: [id])
+  name      String
+  slug      String        @unique
+  /// single_brand | multi_brand | brand_corridor
+  storeType String        @default("multi_brand") @map("store_type")
+  /// draft | active | archived
+  status    String        @default("draft")
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version   Int           @default(1)
+  sources   StoreSource[]
+
+  @@index([companyId])
+  @@map("stores")
+  @@schema("commerce")
+}
+
+/// Mağaza ↔ kaynak e-ticaret sitesi. source_site_id integration modülündedir: yalnız kimlikle (K32).
+model StoreSource {
+  id           String  @id @db.Uuid
+  storeId      String  @map("store_id") @db.Uuid
+  store        Store   @relation(fields: [storeId], references: [id])
+  sourceSiteId String  @unique @map("source_site_id") @db.Uuid
+  /// İleride: yalnız bir kategori/marka (pilotta boş)
+  filter       Json    @default("{}")
+  isPrimary    Boolean @default(true) @map("is_primary")
+
+  @@index([storeId])
+  @@map("store_sources")
+  @@schema("commerce")
+}

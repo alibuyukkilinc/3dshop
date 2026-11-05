@@ -1,0 +1,106 @@
+{
+ "success": true,
+ "code": "ADMIN_PRODUCTS_EXPORT_SUCCESS",
+ "message": "Products exported",
+ "data": {
+  "items": [
+   {
+    "product_id": 101,
+    "barcode": "",
+    "sku": "SKU-101",
+    "model": "M101",
+    "model_code": "",
+    "mpn": "",
+    "isbn": "",
+    "stock": 5,
+    "minimum": 1,
+    "status": 1,
+    "supplier_status": 1,
+    "sell_price": 100.0,
+    "discounted_price": 0.0,
+    "discounted_price_end_date": "0000-00-00 00:00:00",
+    "weight": 2.5,
+    "width": 10.0,
+    "height": 20.0,
+    "depth": 5.0,
+    "isnot_physical": 0,
+    "wholesale": 0,
+    "currency": "TRY",
+    "manufacturer": "Deye",
+    "supplier": "Gizli Tedarikçi A.Ş.",
+    "tax_rate": 20.0,
+    "tax_name": "KDV %20",
+    "date_updated": "2026-11-05 10:00:05",
+    "langs": {
+     "tr": {
+      "name": "Ürün 101",
+      "description": "<p>Açıklama</p>"
+     }
+    },
+    "images": [
+     "https://esensolarmarket.com/img/101-a.jpg",
+     "https://esensolarmarket.com/img/101-a.jpg",
+     "/relative.jpg"
+    ],
+    "categories": [
+     "İnverterler",
+     "  İNVERTERLER ",
+     "Hibrit İnverter"
+    ],
+    "options": [],
+    "price_final": 14708.9,
+    "price_list": 15999.0,
+    "price_currency": "TRY",
+    "price_valid_until": "2026-11-30T23:59:59+03:00",
+    "url": "https://esensolarmarket.com/tr/urun-101",
+    "buy_price": 777.77
+   },
+   {
+    "product_id": 102,
+    "barcode": "",
+    "sku": "SKU-102",
+    "model": "M102",
+    "model_code": "",
+    "mpn": "",
+    "isbn": "",
+    "stock": 5,
+    "minimum": 1,
+    "status": 1,
+    "supplier_status": 0,
+    "sell_price": 100.0,
+    "discounted_price": 0.0,
+    "discounted_price_end_date": "0000-00-00 00:00:00",
+    "weight": 2.5,
+    "width": 10.0,
+    "height": 20.0,
+    "depth": 5.0,
+    "isnot_physical": 1,
+    "wholesale": 0,
+    "currency": "TRY",
+    "manufacturer": "id0",
+    "supplier": "Gizli Tedarikçi A.Ş.",
+    "tax_rate": 20.0,
+    "tax_name": "KDV %20",
+    "date_updated": "2026-11-04 09:00:00",
+    "langs": [],
+    "images": [],
+    "categories": [],
+    "options": [],
+    "price_final": 1249.9,
+    "price_list": 1249.9,
+    "price_currency": "TRY",
+    "price_valid_until": null,
+    "url": "https://esensolarmarket.com/tr/urun-102",
+    "buy_price": 777.77
+   }
+  ],
+  "next_cursor": 102,
+  "has_more": true
+ },
+ "errors": [],
+ "meta": {
+  "trace_id": "abc",
+  "timestamp": "2026-11-05T10:00:00+00:00",
+  "version": "v1"
+ }
+}

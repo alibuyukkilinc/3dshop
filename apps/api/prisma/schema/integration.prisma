@@ -1,0 +1,87 @@
+// Modül: modules/integration. Kaynak sistemler, siteler, kaynak kayıt izi ve eşitleme çalışmaları (A4, K42).
+// Cortex: entegrasyon, katalog.
+
+model SourceSystem {
+  id              String       @id @db.Uuid
+  /// örn. eticaret_legacy
+  code            String       @unique
+  name            String
+  /// Kod tarafındaki adaptör adı
+  adapter         String
+  contractVersion String       @map("contract_version")
+  /// webhook, delta_export, orders, account_link
+  capabilities    Json         @default("{}")
+  sites           SourceSite[]
+
+  @@map("source_systems")
+  @@schema("integration")
+}
+
+model SourceSite {
+  id                  String         @id @db.Uuid
+  sourceSystemId      String         @map("source_system_id") @db.Uuid
+  system              SourceSystem   @relation(fields: [sourceSystemId], references: [id])
+  /// örn. esensolarmarket
+  code                String         @unique
+  baseUrl             String         @map("base_url")
+  /// commerce.stores kaydı: yalnız kimlikle (K32)
+  storeId             String         @map("store_id") @db.Uuid
+  /// active | paused (yönetici durdurdu)
+  status              String         @default("active")
+  /// AES-256-GCM ile şifreli API token'ı (products.public_read). Asla loglanmaz, geri gösterilmez.
+  credentialsEnc      String?        @map("credentials_enc")
+  /// Kaynağın date_updated metni, kaynak biçiminde; delta bundan SONRAKİLERİ ister (K42)
+  watermark           String?
+  lastFullSyncAt      DateTime?      @map("last_full_sync_at") @db.Timestamptz(3)
+  lastDeltaSyncAt     DateTime?      @map("last_delta_sync_at") @db.Timestamptz(3)
+  lastWebhookAt       DateTime?      @map("last_webhook_at") @db.Timestamptz(3)
+  /// Devre kesici: art arda başarısız çalışma sayısı ve bekleme bitişi
+  consecutiveFailures Int            @default(0) @map("consecutive_failures")
+  circuitOpenUntil    DateTime?      @map("circuit_open_until") @db.Timestamptz(3)
+  lastError           String?        @map("last_error")
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version             Int            @default(1)
+  records             SourceRecord[]
+  runs                SyncRun[]
+
+  @@map("source_sites")
+  @@schema("integration")
+}
+
+/// Kaynaktaki her kaydın izi: değişmeyen kayıt yeniden yazılmaz (content_hash), kaybolan kayıt işaretlenir.
+model SourceRecord {
+  id              String     @id @db.Uuid
+  sourceSiteId    String     @map("source_site_id") @db.Uuid
+  site            SourceSite @relation(fields: [sourceSiteId], references: [id])
+  /// product
+  entity          String
+  externalId      String     @map("external_id")
+  contentHash     String     @map("content_hash")
+  sourceUpdatedAt String     @map("source_updated_at")
+  lastSeenAt      DateTime   @map("last_seen_at") @db.Timestamptz(3)
+  deletedAtSource DateTime?  @map("deleted_at_source") @db.Timestamptz(3)
+
+  @@unique([sourceSiteId, entity, externalId])
+  @@map("source_records")
+  @@schema("integration")
+}
+
+model SyncRun {
+  id           String     @id @db.Uuid
+  sourceSiteId String     @map("source_site_id") @db.Uuid
+  site         SourceSite @relation(fields: [sourceSiteId], references: [id])
+  /// full | delta
+  kind         String
+  /// running | succeeded | failed
+  status       String
+  startedAt    DateTime   @map("started_at") @db.Timestamptz(3)
+  finishedAt   DateTime?  @map("finished_at") @db.Timestamptz(3)
+  /// pages, fetched, created, updated, unchanged, removed
+  stats        Json       @default("{}")
+  error        String?
+
+  @@index([sourceSiteId, startedAt(sort: Desc)])
+  @@map("sync_runs")
+  @@schema("integration")
+}

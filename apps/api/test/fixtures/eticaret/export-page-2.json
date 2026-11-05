@@ -1,0 +1,136 @@
+{
+ "success": true,
+ "code": "ADMIN_PRODUCTS_EXPORT_SUCCESS",
+ "message": "Products exported",
+ "data": {
+  "items": [
+   {
+    "product_id": 103,
+    "barcode": "",
+    "sku": "SKU-103",
+    "model": "M103",
+    "model_code": "",
+    "mpn": "",
+    "isbn": "",
+    "stock": 5,
+    "minimum": 1,
+    "status": 1,
+    "supplier_status": 1,
+    "sell_price": 100.0,
+    "discounted_price": 0.0,
+    "discounted_price_end_date": "0000-00-00 00:00:00",
+    "weight": 2.5,
+    "width": 10.0,
+    "height": 20.0,
+    "depth": 5.0,
+    "isnot_physical": 0,
+    "wholesale": 0,
+    "currency": "TRY",
+    "manufacturer": "Net Deneme Kulübü",
+    "supplier": "Gizli Tedarikçi A.Ş.",
+    "tax_rate": 20.0,
+    "tax_name": "KDV %20",
+    "date_updated": "2026-11-05 09:30:00",
+    "langs": {
+     "tr": {
+      "name": "Ürün 103",
+      "description": "<p>Açıklama</p>"
+     }
+    },
+    "images": [],
+    "categories": [],
+    "options": [
+     {
+      "option_group_id": 7,
+      "option_id": 48,
+      "group_code": "ders",
+      "group_name": "Ders",
+      "option_code": "mat",
+      "option_name": "Matematik",
+      "option_value": "",
+      "quantity": 10,
+      "price_type": "+",
+      "price": 0.0,
+      "subtract": 1,
+      "required": 1,
+      "price_final": 120.5,
+      "stock": 10
+     },
+     {
+      "option_group_id": 7,
+      "option_id": 49,
+      "group_code": "ders",
+      "group_name": "Ders",
+      "option_code": "fiz",
+      "option_name": "Fizik",
+      "option_value": "",
+      "quantity": 0,
+      "price_type": "+",
+      "price": 0.0,
+      "subtract": 1,
+      "required": 1,
+      "price_final": 99.99,
+      "stock": 0
+     }
+    ],
+    "price_final": 450.0,
+    "price_list": 500.0,
+    "price_currency": "TRY",
+    "price_valid_until": null,
+    "url": "https://esensolarmarket.com/tr/urun-103",
+    "buy_price": 777.77
+   },
+   {
+    "product_id": 104,
+    "barcode": "",
+    "sku": "SKU-104",
+    "model": "M104",
+    "model_code": "",
+    "mpn": "",
+    "isbn": "",
+    "stock": 5,
+    "minimum": 1,
+    "status": 1,
+    "supplier_status": 1,
+    "sell_price": 100.0,
+    "discounted_price": 0.0,
+    "discounted_price_end_date": "0000-00-00 00:00:00",
+    "weight": 2.5,
+    "width": 10.0,
+    "height": 20.0,
+    "depth": 5.0,
+    "isnot_physical": 0,
+    "wholesale": 0,
+    "currency": "TRY",
+    "manufacturer": "Deye",
+    "supplier": "Gizli Tedarikçi A.Ş.",
+    "tax_rate": 20.0,
+    "tax_name": "KDV %20",
+    "date_updated": "2026-11-03 08:00:00",
+    "langs": {
+     "tr": {
+      "name": "Ürün 104",
+      "description": "<p>Açıklama</p>"
+     }
+    },
+    "images": [],
+    "categories": [],
+    "options": [],
+    "price_final": null,
+    "price_list": null,
+    "price_currency": null,
+    "price_valid_until": null,
+    "url": null,
+    "buy_price": 777.77
+   }
+  ],
+  "next_cursor": 104,
+  "has_more": false
+ },
+ "errors": [],
+ "meta": {
+  "trace_id": "abc",
+  "timestamp": "2026-11-05T10:00:00+00:00",
+  "version": "v1"
+ }
+}
