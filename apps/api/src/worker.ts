@@ -95,6 +95,8 @@ async function bootstrap() {
           if (!(e instanceof SyncBusyError)) logger.warn(`${code} ${kind} eşitleme hatası: ${(e as Error).message}`);
         }
       }
+      // İndirimi biten ürünler (K42): kaynak date_updated'i değiştirmediği için delta yakalamaz
+      if (!stopping) await sync.refreshExpiredPrices();
       for (const site of await sources.failing(OPEN_AFTER)) {
         await alerts.raise({
           key: `integration:site_failing:${site.code}`,

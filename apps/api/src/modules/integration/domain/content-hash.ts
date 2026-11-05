@@ -7,7 +7,10 @@ import type { ProductV1 } from '@dtd/contracts';
  */
 export function productContentHash(product: ProductV1): string {
   const { source, ...content } = product;
-  const basis = { site: source.site, external_id: source.external_id, content };
+  // Seçenek sırası kaynakta eşit main_sort değerlerinde kararsız olabilir: özet sırasız hesaplanır,
+  // gösterim sırası ilk yazılan hâliyle kalır
+  const variants = [...content.variants].sort((a, b) => (a.external_ref < b.external_ref ? -1 : a.external_ref > b.external_ref ? 1 : 0));
+  const basis = { site: source.site, external_id: source.external_id, content: { ...content, variants } };
   return `sha256:${createHash('sha256').update(stableStringify(basis), 'utf8').digest('hex')}`;
 }
 

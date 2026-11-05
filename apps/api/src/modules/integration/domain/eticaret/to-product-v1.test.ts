@@ -38,8 +38,8 @@ describe('eticaret export → commerce.product.v1 (sözleşme testi)', () => {
   it('kategori adlarını tekilleştirir, görsellerden tekrarı ve göreli adresi atar', () => {
     const p = map(101);
     expect(p.categories).toEqual([
-      { external_id: 'inverterler', name: 'İnverterler' },
       { external_id: 'hibrit inverter', name: 'Hibrit İnverter' },
+      { external_id: 'inverterler', name: 'İnverterler' },
     ]);
     expect(p.media).toEqual([{ kind: 'image', url: 'https://esensolarmarket.com/img/101-a.jpg' }]);
     expect(p.brand).toEqual({ source_name: 'Deye' });
@@ -65,6 +65,25 @@ describe('eticaret export → commerce.product.v1 (sözleşme testi)', () => {
     const p = map(104);
     expect(p.price).toBeNull();
     expect(p.url).toBeNull();
+  });
+
+  it('kaynağın kararsız sıraları (galeri, kategori, seçenek) ürünü "değişmiş" göstermez', () => {
+    const raw = EticaretProductSchema.parse({
+      ...items.find((i) => i.product_id === 103),
+      images: ['https://x.test/main.jpg', 'https://x.test/b.jpg', 'https://x.test/a.jpg'],
+      categories: ['Ders', 'Ana'],
+    });
+    const shuffled = {
+      ...raw,
+      images: ['https://x.test/main.jpg', 'https://x.test/a.jpg', 'https://x.test/b.jpg'],
+      categories: ['Ana', 'Ders'],
+      options: [...raw.options].reverse(),
+    };
+    const a = toProductV1(raw, 's');
+    const b = toProductV1(shuffled, 's');
+    expect(a.media.map((m) => m.url)).toEqual(['https://x.test/main.jpg', 'https://x.test/a.jpg', 'https://x.test/b.jpg']);
+    expect(a.categories).toEqual(b.categories);
+    expect(productContentHash(a)).toBe(productContentHash(b));
   });
 
   it('içerik özeti kaynak zamanından bağımsız, içerikle değişir', () => {

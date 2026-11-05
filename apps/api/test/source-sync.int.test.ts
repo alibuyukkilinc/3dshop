@@ -23,14 +23,16 @@ class FakeSource implements ExportSource {
   products: Raw[] = [];
   queries: { updatedSince?: string | null; cursor: number }[] = [];
   failWith: Error | null = null;
-  async exportPage(q: { updatedSince?: string | null; cursor: number; limit: number }) {
-    this.queries.push({ updatedSince: q.updatedSince, cursor: q.cursor });
+  async exportPage(q: { updatedSince?: string | null; cursor?: number; limit: number }) {
+    const cursor = q.cursor ?? 0;
+    this.queries.push({ updatedSince: q.updatedSince, cursor });
     if (this.failWith) throw this.failWith;
     const rows = this.products
-      .filter((p) => p.product_id > q.cursor && (!q.updatedSince || p.date_updated > q.updatedSince))
+      .filter((p) => p.product_id > cursor && (!q.updatedSince || p.date_updated > q.updatedSince))
       .sort((a, b) => a.product_id - b.product_id);
-    const items = rows.slice(0, 2); // küçük sayfa: sayfalamayı da sına
-    return { items, nextCursor: items.at(-1)?.product_id ?? q.cursor, hasMore: rows.length > 2 };
+    const size = Math.min(q.limit, 2); // küçük sayfa: sayfalamayı da sına
+    const items = rows.slice(0, size);
+    return { items, nextCursor: items.at(-1)?.product_id ?? cursor, hasMore: rows.length > size };
   }
 }
 
@@ -134,9 +136,26 @@ describe.skipIf(!hasDatabase)('kaynak eşitleme (F1.1, K41, K42)', () => {
     expect((await prisma.sourceSite.findUniqueOrThrow({ where: { code: SITE } })).watermark).toBe('2026-11-05 10:30:00');
   });
 
+  it('indirim bitince ürün tekil yeniden çekilir; aynı bitiş için bir daha sorulmaz (K42)', async () => {
+    const afterExpiry = new Date('2026-12-01T00:00:00Z');
+    const p101 = source.products.find((p) => p.product_id === 101)!;
+    Object.assign(p101, { price_final: 15999, price_list: 15999, price_valid_until: null }); // date_updated değişmez
+    expect(await sync.refreshExpiredPrices(new Date('2026-11-20T00:00:00Z'))).toEqual({ checked: 0, changed: 0 });
+
+    expect(await sync.refreshExpiredPrices(afterExpiry)).toEqual({ checked: 1, changed: 1 });
+    expect(source.queries.at(-1)).toEqual({ updatedSince: undefined, cursor: 100 });
+    const price = await prisma.catalogPrice.findFirstOrThrow({ where: { product: { externalId: '101' }, variantRef: null } });
+    expect(price.finalMinor).toBe(1599900n);
+    expect(price.validUntil).toBeNull();
+    expect(await sync.refreshExpiredPrices(afterExpiry)).toEqual({ checked: 0, changed: 0 });
+  });
+
   it('tam eşitlemede kaybolan ürün "kaynakta yok" olur, silinmez; geri gelince canlanır', async () => {
     source.products = source.products.filter((p) => p.product_id !== 102);
-    expect((await sync.run(SITE, 'full')).removed).toBe(1);
+    const reconcile = await sync.run(SITE, 'full');
+    expect(reconcile.removed).toBe(1);
+    // Uzlaştırma sapması: delta'nın kaçırdığı fark kayda geçer
+    expect(reconcile.drift_ids).toEqual(['102']);
     const gone = await prisma.catalogProduct.findFirstOrThrow({ where: { externalId: '102' } });
     expect(gone.status).toBe('removed_at_source');
     expect(await events('catalog.product.removed')).toBe(1);

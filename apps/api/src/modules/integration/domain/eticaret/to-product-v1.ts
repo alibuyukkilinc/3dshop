@@ -56,7 +56,10 @@ export function toProductV1(raw: EticaretProduct, site: string): ProductV1 {
     },
     brand,
     i18n,
-    categories: [...categories].map(([external_id, name]) => ({ external_id, name })),
+    // Kaynak kategorileri sırasız döner (ORDER BY yok): kararlı olsun diye kimliğe göre sıralanır
+    categories: [...categories]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([external_id, name]) => ({ external_id, name })),
     price,
     stock: { quantity: raw.stock },
     variants: raw.options.map((o) => ({
@@ -66,9 +69,7 @@ export function toProductV1(raw: EticaretProduct, site: string): ProductV1 {
       price: o.price_final === null || o.price_final === undefined || price === null ? null : { final_minor: toMinor(o.price_final) },
       stock: { quantity: o.stock ?? o.quantity },
     })),
-    media: [...new Set(raw.images.map((u) => u.trim()))]
-      .filter(isAbsoluteHttpUrl)
-      .map((url) => ({ kind: 'image' as const, url })),
+    media: stableImages(raw.images).map((url) => ({ kind: 'image' as const, url })),
     url: raw.url && isAbsoluteHttpUrl(raw.url) ? raw.url : null,
     physical:
       raw.isnot_physical === 1
@@ -82,6 +83,17 @@ export function toProductV1(raw: EticaretProduct, site: string): ProductV1 {
           },
   };
   return ProductV1Schema.parse(product);
+}
+
+/**
+ * Kaynak ana görseli başa koyar (kararlı), galeriyi ise eşit sort değerlerinde her istekte farklı sırayla
+ * döndürür (2026-11-06 staging: 3 sn arayla 117 üründe sıra değişti). Ana görsel başta kalır, galeri adrese
+ * göre sıralanır; böylece sıra değişimi "ürün değişti" sayılmaz.
+ */
+function stableImages(images: string[]): string[] {
+  const unique = [...new Set(images.map((u) => u.trim()))].filter(isAbsoluteHttpUrl);
+  const [main, ...gallery] = unique;
+  return main === undefined ? [] : [main, ...gallery.sort()];
 }
 
 /** Export kategori kimliği vermiyor, yalnız adı: aynı ad aynı kategori sayılır. */
