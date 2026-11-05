@@ -1,0 +1,10 @@
+{
+  "extends": "@dtd/config/tsconfig.node.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false
+  },
+  "include": ["src", "test", "scripts", "prisma.config.ts", "vitest.config.ts"]
+}

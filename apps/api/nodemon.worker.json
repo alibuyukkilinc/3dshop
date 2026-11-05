@@ -1,0 +1,7 @@
+{
+  "watch": ["src", "../../packages/contracts/src", "../../.env"],
+  "ext": "ts,json",
+  "ignore": ["src/**/*.test.ts", "src/generated/**"],
+  "delay": 300,
+  "exec": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register src/worker.ts"
+}

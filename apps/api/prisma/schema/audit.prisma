@@ -1,0 +1,28 @@
+// Modül: modules/audit. Silinmez denetim kaydı (K47): yalnız ekleme, aylık bölüm (ham SQL göçünde),
+// hash zinciri (prev_hash -> hash). Uygulama rolünün UPDATE/DELETE yetkisi yoktur.
+
+model AuditLog {
+  id          String   @db.Uuid
+  at          DateTime @db.Timestamptz(3)
+  /// Zincir sırası (global dizi)
+  seq         BigInt
+  /// admin | system | adapter | ai | guest | user
+  actorType   String   @map("actor_type")
+  actorId     String   @map("actor_id")
+  action      String
+  entityType  String?  @map("entity_type")
+  entityId    String?  @map("entity_id")
+  changesetId String?  @map("changeset_id") @db.Uuid
+  diff        Json?
+  reason      String?
+  requestId   String?  @map("request_id")
+  ipHash      String?  @map("ip_hash")
+  prevHash    String   @map("prev_hash")
+  hash        String
+
+  @@id([id, at])
+  @@index([entityType, entityId, at])
+  @@index([seq])
+  @@map("audit_log")
+  @@schema("audit")
+}

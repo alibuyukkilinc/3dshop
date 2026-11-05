@@ -1,0 +1,91 @@
+// Modül: modules/identity. F0: yönetici kimliği, roller, oturum, TOTP 2FA (zorunlu), kurtarma kodları.
+// Misafir oturumu, üyelik ve rıza tabloları F2/F5'te eklenir (Cortex veritabani §5).
+
+model AdminUser {
+  id                    String    @id @db.Uuid
+  /// Küçük harfe çevrilmiş e-posta
+  email                 String    @unique
+  displayName           String    @map("display_name")
+  passwordHash          String    @map("password_hash")
+  /// active | disabled
+  status                String    @default("active")
+  /// AES-256-GCM ile şifreli TOTP sırrı (SECRETS_KEY); 2FA kurulunca dolar
+  totpSecretEnc         String?   @map("totp_secret_enc")
+  /// Kurulum sırasında üretilen, henüz doğrulanmamış sır
+  totpPendingSecretEnc  String?   @map("totp_pending_secret_enc")
+  totpEnabledAt         DateTime? @map("totp_enabled_at") @db.Timestamptz(3)
+  /// Son kabul edilen TOTP adımı: aynı kod ikinci kez kullanılamaz
+  totpLastStep          BigInt?   @map("totp_last_step")
+  failedAttempts        Int       @default(0) @map("failed_attempts")
+  lockedUntil           DateTime? @map("locked_until") @db.Timestamptz(3)
+  lastLoginAt           DateTime? @map("last_login_at") @db.Timestamptz(3)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version               Int       @default(1)
+
+  roles         AdminUserRole[]
+  sessions      AdminSession[]
+  recoveryCodes AdminRecoveryCode[]
+
+  @@map("admin_users")
+  @@schema("identity")
+}
+
+/// platform_admin | editor | approver (K44: esnek dört göz onaylayıcı rolü)
+model Role {
+  code String @id
+  name String
+
+  users AdminUserRole[]
+
+  @@map("roles")
+  @@schema("identity")
+}
+
+model AdminUserRole {
+  adminUserId String @map("admin_user_id") @db.Uuid
+  roleCode    String @map("role_code")
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  role      Role      @relation(fields: [roleCode], references: [code], onDelete: Restrict)
+
+  @@id([adminUserId, roleCode])
+  @@map("admin_user_roles")
+  @@schema("identity")
+}
+
+model AdminSession {
+  id          String    @id @db.Uuid
+  /// Çerezdeki rastgele belirtecin SHA-256'sı (belirtecin kendisi saklanmaz)
+  tokenHash   String    @unique @map("token_hash")
+  adminUserId String    @map("admin_user_id") @db.Uuid
+  /// mfa_setup | mfa_verify | full
+  stage       String
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  ipHash      String?   @map("ip_hash")
+  userAgent   String?   @map("user_agent")
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId])
+  @@map("admin_sessions")
+  @@schema("identity")
+}
+
+model AdminRecoveryCode {
+  id          String    @id @db.Uuid
+  adminUserId String    @map("admin_user_id") @db.Uuid
+  /// Kodun SHA-256'sı
+  codeHash    String    @map("code_hash")
+  usedAt      DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId])
+  @@map("admin_recovery_codes")
+  @@schema("identity")
+}

@@ -1,0 +1,24 @@
+node_modules/
+dist/
+.next/
+coverage/
+.turbo/
+*.log
+*.tsbuildinfo
+next-env.d.ts
+
+# Gizli bilgiler asla repoya girmez
+.env
+.env.*
+!.env.example
+
+# Prisma tarafından üretilen istemci
+apps/api/src/generated/
+
+.DS_Store
+Thumbs.db
+# Cortex bilgisi hub'da tutulur, bu depoda değil
+.cortex/
+
+# Yerel geliştirme test hesapları (asla repoya girmez)
+*.local.*

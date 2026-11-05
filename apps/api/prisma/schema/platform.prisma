@@ -1,0 +1,56 @@
+// Modül: modules/platform. Outbox/inbox (K34), merkezi ayarlar (K07), feature flag. Cortex: veritabani §4.
+
+/// Transactional outbox: olay, iş verisiyle aynı transaction'da yazılır; worker iletir.
+model OutboxEvent {
+  id            String    @id @db.Uuid
+  module        String
+  eventType     String    @map("event_type")
+  version       Int
+  aggregateType String    @map("aggregate_type")
+  aggregateId   String    @map("aggregate_id")
+  /// Olay zarfının tamamı (K50)
+  payload       Json
+  occurredAt    DateTime  @map("occurred_at") @db.Timestamptz(3)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(3)
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  lastError     String?   @map("last_error")
+  /// Denemeler tükenince true: ölü mektup (K51)
+  dead          Boolean   @default(false)
+
+  @@map("outbox")
+  @@schema("platform")
+}
+
+/// Tüketicinin işlediği olaylar: tekrar işleme koruması.
+model InboxEntry {
+  consumer    String
+  eventId     String   @map("event_id") @db.Uuid
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz(3)
+
+  @@id([consumer, eventId])
+  @@map("inbox")
+  @@schema("platform")
+}
+
+/// Merkezi platform ayarları (K07). Sır değerler burada tutulmaz.
+model Setting {
+  key       String   @id
+  value     Json
+  version   Int      @default(1)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy String?  @map("updated_by")
+
+  @@map("settings")
+  @@schema("platform")
+}
+
+model FeatureFlag {
+  key       String   @id
+  enabled   Boolean  @default(false)
+  rules     Json     @default("{}")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("feature_flags")
+  @@schema("platform")
+}

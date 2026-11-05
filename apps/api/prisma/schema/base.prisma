@@ -1,0 +1,13 @@
+// Her modül kendi .prisma dosyasını ve kendi PostgreSQL şemasını kullanır (@@schema). Cortex: K32, K33, K36.
+// Modüller arası yabancı anahtar YOK (K32): başka modülün kaydına yalnız kimlikle başvurulur.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["platform", "audit", "identity"]
+}

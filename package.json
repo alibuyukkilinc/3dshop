@@ -1,0 +1,32 @@
+{
+  "name": "dtd",
+  "private": true,
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "eslint .",
+    "arch": "depcruise apps packages --config .dependency-cruiser.cjs",
+    "check": "pnpm lint && pnpm typecheck && pnpm arch && pnpm test",
+    "db:init": "powershell -ExecutionPolicy Bypass -File scripts/db/init-dev.ps1",
+    "db:migrate": "pnpm --filter @dtd/api db:migrate",
+    "db:deploy": "pnpm --filter @dtd/api db:deploy",
+    "admin:create": "pnpm --filter @dtd/api admin:create",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "dependency-cruiser": "^18.4.0",
+    "eslint": "^10.11.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.6.0",
+    "turbo": "^2.11.4",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.1"
+  }
+}

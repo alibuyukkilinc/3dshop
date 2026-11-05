@@ -1,0 +1,19 @@
+{
+  "name": "@dtd/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.node.json": "./tsconfig.node.json",
+    "./tsconfig.react.json": "./tsconfig.react.json",
+    "./dependency-cruiser": "./dependency-cruiser.cjs"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "dependency-cruiser": "^18.4.0",
+    "vitest": "^5.0.2"
+  }
+}
