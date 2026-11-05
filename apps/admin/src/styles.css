@@ -14,6 +14,8 @@
   --danger-bg: #fdecea;
   --ok: #067647;
   --ok-bg: #e7f6ee;
+  --warn: #a15c07;
+  --warn-bg: #fdf3e2;
   color-scheme: light;
 }
 
@@ -31,6 +33,8 @@
     --danger-bg: #3a1714;
     --ok: #47cd89;
     --ok-bg: #0f2d1f;
+    --warn: #fdb022;
+    --warn-bg: #3a2a0c;
     color-scheme: dark;
   }
 }
@@ -48,6 +52,8 @@
   --color-danger-bg: var(--danger-bg);
   --color-ok: var(--ok);
   --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
 }
 
 html,

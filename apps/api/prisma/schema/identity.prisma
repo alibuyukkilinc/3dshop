@@ -2,26 +2,26 @@
 // Misafir oturumu, üyelik ve rıza tabloları F2/F5'te eklenir (Cortex veritabani §5).
 
 model AdminUser {
-  id                    String    @id @db.Uuid
+  id                   String    @id @db.Uuid
   /// Küçük harfe çevrilmiş e-posta
-  email                 String    @unique
-  displayName           String    @map("display_name")
-  passwordHash          String    @map("password_hash")
+  email                String    @unique
+  displayName          String    @map("display_name")
+  passwordHash         String    @map("password_hash")
   /// active | disabled
-  status                String    @default("active")
+  status               String    @default("active")
   /// AES-256-GCM ile şifreli TOTP sırrı (SECRETS_KEY); 2FA kurulunca dolar
-  totpSecretEnc         String?   @map("totp_secret_enc")
+  totpSecretEnc        String?   @map("totp_secret_enc")
   /// Kurulum sırasında üretilen, henüz doğrulanmamış sır
-  totpPendingSecretEnc  String?   @map("totp_pending_secret_enc")
-  totpEnabledAt         DateTime? @map("totp_enabled_at") @db.Timestamptz(3)
+  totpPendingSecretEnc String?   @map("totp_pending_secret_enc")
+  totpEnabledAt        DateTime? @map("totp_enabled_at") @db.Timestamptz(3)
   /// Son kabul edilen TOTP adımı: aynı kod ikinci kez kullanılamaz
-  totpLastStep          BigInt?   @map("totp_last_step")
-  failedAttempts        Int       @default(0) @map("failed_attempts")
-  lockedUntil           DateTime? @map("locked_until") @db.Timestamptz(3)
-  lastLoginAt           DateTime? @map("last_login_at") @db.Timestamptz(3)
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  version               Int       @default(1)
+  totpLastStep         BigInt?   @map("totp_last_step")
+  failedAttempts       Int       @default(0) @map("failed_attempts")
+  lockedUntil          DateTime? @map("locked_until") @db.Timestamptz(3)
+  lastLoginAt          DateTime? @map("last_login_at") @db.Timestamptz(3)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version              Int       @default(1)
 
   roles         AdminUserRole[]
   sessions      AdminSession[]

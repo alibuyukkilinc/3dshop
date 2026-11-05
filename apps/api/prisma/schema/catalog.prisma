@@ -9,6 +9,8 @@ model CatalogProduct {
   externalId       String                  @map("external_id")
   /// Kaynaktaki marka adı; platform markasına eşleme F1.3 (brand_mappings)
   brandSourceName  String?                 @map("brand_source_name")
+  /// brand_mappings'ten türetilir (commerce.brands, yalnız kimlik)
+  brandId          String?                 @map("brand_id") @db.Uuid
   sku              String?
   barcode          String?
   mpn              String?
@@ -29,8 +31,10 @@ model CatalogProduct {
   stock            CatalogStock?
   media            CatalogMedia[]
   sourceCategories ProductSourceCategory[]
+  categories       ProductCategory[]
 
   @@unique([sourceSiteId, externalId])
+  @@index([brandId])
   @@index([storeId, status])
   @@map("catalog_products")
   @@schema("catalog")
@@ -120,6 +124,7 @@ model SourceCategory {
   externalId   String                  @map("external_id")
   name         String
   products     ProductSourceCategory[]
+  mapping      CategoryMapping?
 
   @@unique([sourceSiteId, externalId])
   @@map("source_categories")
@@ -134,5 +139,88 @@ model ProductSourceCategory {
 
   @@id([productId, sourceCategoryId])
   @@map("product_source_categories")
+  @@schema("catalog")
+}
+
+/// Platformun kendi kategori ağacı (A4). Kaynak kategorileri buna eşlenir.
+model CatalogCategory {
+  id        String                @id @db.Uuid
+  parentId  String?               @map("parent_id") @db.Uuid
+  parent    CatalogCategory?      @relation("CategoryTree", fields: [parentId], references: [id])
+  children  CatalogCategory[]     @relation("CategoryTree")
+  slug      String                @unique
+  sort      Int                   @default(0)
+  /// active | archived
+  status    String                @default("active")
+  createdAt DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version   Int                   @default(1)
+  i18n      CatalogCategoryI18n[]
+  mappings  CategoryMapping[]
+  products  ProductCategory[]
+
+  @@index([parentId])
+  @@map("catalog_categories")
+  @@schema("catalog")
+}
+
+model CatalogCategoryI18n {
+  categoryId String          @map("category_id") @db.Uuid
+  category   CatalogCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  locale     String
+  name       String
+
+  @@id([categoryId, locale])
+  @@map("catalog_categories_i18n")
+  @@schema("catalog")
+}
+
+/// Kaynak kategori → platform kategorisi. catalog_category_id null + ignored: bilerek eşlenmedi.
+model CategoryMapping {
+  sourceCategoryId  String           @id @map("source_category_id") @db.Uuid
+  sourceCategory    SourceCategory   @relation(fields: [sourceCategoryId], references: [id], onDelete: Cascade)
+  catalogCategoryId String?          @map("catalog_category_id") @db.Uuid
+  catalogCategory   CatalogCategory? @relation(fields: [catalogCategoryId], references: [id])
+  ignored           Boolean          @default(false)
+  /// manual | suggested | rule
+  method            String           @default("manual")
+  approvedBy        String?          @map("approved_by")
+  updatedAt         DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([catalogCategoryId])
+  @@map("category_mappings")
+  @@schema("catalog")
+}
+
+/// Ürün ↔ platform kategorisi: eşlemeden türetilir (elle ezme ileride).
+model ProductCategory {
+  productId         String          @map("product_id") @db.Uuid
+  product           CatalogProduct  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  catalogCategoryId String          @map("catalog_category_id") @db.Uuid
+  catalogCategory   CatalogCategory @relation(fields: [catalogCategoryId], references: [id])
+  isPrimary         Boolean         @default(false) @map("is_primary")
+
+  @@id([productId, catalogCategoryId])
+  @@index([catalogCategoryId])
+  @@map("product_categories")
+  @@schema("catalog")
+}
+
+/// Kaynaktaki üretici adı → platform markası (commerce.brands, yalnız kimlik). brand_id null + ignored: marka değil.
+model BrandMapping {
+  id           String   @id @db.Uuid
+  sourceSiteId String   @map("source_site_id") @db.Uuid
+  /// Normalize ad (trim, tek boşluk, tr küçük harf)
+  sourceKey    String   @map("source_key")
+  sourceName   String   @map("source_name")
+  brandId      String?  @map("brand_id") @db.Uuid
+  ignored      Boolean  @default(false)
+  method       String   @default("manual")
+  approvedBy   String?  @map("approved_by")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([sourceSiteId, sourceKey])
+  @@index([brandId])
+  @@map("brand_mappings")
   @@schema("catalog")
 }

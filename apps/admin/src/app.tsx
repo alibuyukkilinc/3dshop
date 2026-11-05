@@ -2,7 +2,7 @@ import type { AdminMe, AdminSessionStage } from '@dtd/contracts';
 import { useCallback, useEffect, useState } from 'react';
 import { LoginPage } from './modules/auth/login-page';
 import { MfaSetupPage, MfaVerifyPage, RecoveryCodesPage } from './modules/auth/mfa-pages';
-import { HomePage } from './modules/home/home-page';
+import { AdminShell } from './modules/shell/admin-shell';
 import { ApiError, api } from './shared/api';
 
 type View =
@@ -58,6 +58,6 @@ export function App() {
     case 'recovery':
       return <RecoveryCodesPage codes={view.codes} onContinue={() => void refresh()} />;
     case 'home':
-      return <HomePage me={view.me} onLoggedOut={() => setView({ kind: 'login' })} />;
+      return <AdminShell me={view.me} onLoggedOut={() => setView({ kind: 'login' })} />;
   }
 }

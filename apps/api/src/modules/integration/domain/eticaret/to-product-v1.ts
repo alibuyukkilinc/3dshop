@@ -1,4 +1,4 @@
-import { type ProductV1, ProductV1Schema, toMinor } from '@dtd/contracts';
+import { type ProductV1, ProductV1Schema, normalizeKey, toMinor } from '@dtd/contracts';
 import type { EticaretProduct } from './export-schema.js';
 
 export const ETICARET_SYSTEM = 'eticaret_legacy';
@@ -98,7 +98,7 @@ function stableImages(images: string[]): string[] {
 
 /** Export kategori kimliği vermiyor, yalnız adı: aynı ad aynı kategori sayılır. */
 export function categoryKey(name: string): string {
-  return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('tr');
+  return normalizeKey(name);
 }
 
 function isAbsoluteHttpUrl(value: string): boolean {

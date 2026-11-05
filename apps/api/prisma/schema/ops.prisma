@@ -2,19 +2,19 @@
 
 /// Aynı hata türü (parmak izi) tek satırda sayılır; son örneğin yığın izi saklanır.
 model ErrorEvent {
-  fingerprint  String    @id
+  fingerprint String    @id
   /// api | worker | web | job
-  source       String
-  name         String
-  message      String
-  stack        String?
-  count        Int       @default(1)
-  firstSeenAt  DateTime  @default(now()) @map("first_seen_at") @db.Timestamptz(3)
-  lastSeenAt   DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  source      String
+  name        String
+  message     String
+  stack       String?
+  count       Int       @default(1)
+  firstSeenAt DateTime  @default(now()) @map("first_seen_at") @db.Timestamptz(3)
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
   /// Son örneğin bağlamı: method, path, request_id, olay türü (kişisel veri yazılmaz)
-  lastContext  Json?     @map("last_context")
-  resolvedAt   DateTime? @map("resolved_at") @db.Timestamptz(3)
-  resolvedBy   String?   @map("resolved_by")
+  lastContext Json?     @map("last_context")
+  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz(3)
+  resolvedBy  String?   @map("resolved_by")
 
   @@index([resolvedAt, lastSeenAt])
   @@map("error_events")

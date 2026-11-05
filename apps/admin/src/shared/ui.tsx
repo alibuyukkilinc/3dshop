@@ -91,3 +91,75 @@ export function AuthCard({ title, subtitle, children }: { title: string; subtitl
     </main>
   );
 }
+
+export type Tone = 'ok' | 'warn' | 'danger' | 'muted' | 'accent';
+
+export function Badge({ tone = 'muted', children }: { tone?: Tone; children: ReactNode }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap',
+        tone === 'ok' && 'bg-ok-bg text-ok',
+        tone === 'danger' && 'bg-danger-bg text-danger',
+        tone === 'warn' && 'bg-warn-bg text-warn',
+        tone === 'muted' && 'bg-surface-2 text-muted',
+        tone === 'accent' && 'bg-accent/15 text-accent',
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+export function SelectField({
+  label,
+  options,
+  value,
+  onChange,
+  placeholder,
+  className,
+  disabled,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
+}) {
+  const id = useId();
+  return (
+    <div className={cn('min-w-0', className)}>
+      <label htmlFor={id} className="sr-only">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 w-full rounded-md border border-line bg-surface px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-60"
+      >
+        {placeholder !== undefined && <option value="">{placeholder}</option>}
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-semibold">{title}</h1>
+        {description && <p className="mt-1 max-w-2xl text-sm text-muted">{description}</p>}
+      </div>
+      {actions && <div className="flex items-center gap-2">{actions}</div>}
+    </div>
+  );
+}

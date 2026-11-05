@@ -54,3 +54,19 @@ model StoreSource {
   @@map("store_sources")
   @@schema("commerce")
 }
+
+/// Marka (A2, K39). Firma ile marka ayrıdır; marka sahibi firma biliniyorsa owner_company_id.
+model Brand {
+  id             String   @id @db.Uuid
+  name           String
+  slug           String   @unique
+  ownerCompanyId String?  @map("owner_company_id") @db.Uuid
+  /// active | archived
+  status         String   @default("active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version        Int      @default(1)
+
+  @@map("brands")
+  @@schema("commerce")
+}

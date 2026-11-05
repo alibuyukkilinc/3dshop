@@ -3,6 +3,7 @@ import { type Actor, type ProductV1, ProductV1Schema, uuidv7 } from '@dtd/contra
 import { Prisma } from '../../../generated/prisma/client.js';
 import type { Tx } from '../../../infra/db/types.js';
 import { OutboxWriter } from '../../platform/public/index.js';
+import { CatalogMappingService } from './catalog-mapping.service.js';
 
 export interface IngestInput {
   storeId: string;
@@ -23,7 +24,10 @@ export type IngestOutcome = 'created' | 'updated';
  */
 @Injectable()
 export class CatalogIngest {
-  constructor(private readonly outbox: OutboxWriter) {}
+  constructor(
+    private readonly outbox: OutboxWriter,
+    private readonly mapping: CatalogMappingService,
+  ) {}
 
   async apply(tx: Tx, input: IngestInput): Promise<{ productId: string; outcome: IngestOutcome }> {
     const p = ProductV1Schema.parse(input.product);
@@ -144,6 +148,10 @@ export class CatalogIngest {
       });
       await tx.productSourceCategory.create({ data: { productId, sourceCategoryId: cat.id } });
     }
+
+    // Platform kategorisi ve markası eşlemeden türetilir (F1.3): yeni ürün de mevcut eşlemeleri hemen alır
+    await this.mapping.deriveCategories(tx, [productId]);
+    await this.mapping.deriveBrand(tx, productId, input.sourceSiteId, p.brand?.source_name ?? null);
 
     const outcome: IngestOutcome = existing ? 'updated' : 'created';
     await this.outbox.append(tx, {
