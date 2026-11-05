@@ -71,6 +71,14 @@ rsync -a --exclude assets --exclude index.html apps/admin/dist/ "$ADMIN_ROOT/"
 cp apps/admin/dist/index.html "$ADMIN_ROOT/index.html.tmp" && mv "$ADMIN_ROOT/index.html.tmp" "$ADMIN_ROOT/index.html"
 find "$ADMIN_ROOT/assets" -type f -mtime +30 -delete
 
+# Motor laboratuvarı (K20 prototipi; motor seçilince kaldırılacak): https://staging.firmaxi.com/lab/
+if [[ -d apps/engine-lab ]]; then
+  step "Motor laboratuvarı"
+  pnpm --filter @dtd/engine-lab exec vite build >/dev/null
+  mkdir -p /srv/dtd/lab
+  rsync -a --delete apps/engine-lab/dist/ /srv/dtd/lab/
+fi
+
 echo
 echo "Yayında: $(git log -1 --format='%h %s')"
 pm2 status
