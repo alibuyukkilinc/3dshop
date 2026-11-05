@@ -49,7 +49,9 @@ let cached: Env | null = null;
 
 export function loadEnv(): Env {
   if (cached) return cached;
-  const parsed = EnvSchema.safeParse(process.env);
+  // Boş değer ("ANAHTAR=") tanımsız sayılır: isteğe bağlı ayarlar boş bırakılınca süreç çökmesin
+  const raw = Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== undefined && v !== ''));
+  const parsed = EnvSchema.safeParse(raw);
   if (!parsed.success) {
     const fields = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`Ortam değişkenleri geçersiz: ${fields}`);
