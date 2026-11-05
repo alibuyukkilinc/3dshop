@@ -4,3 +4,4 @@ export { CatalogIngest, type IngestInput, type IngestOutcome } from '../applicat
 export { CatalogPriceExpiry, type ExpiredPrice } from '../application/catalog-price-expiry.js';
 export { CatalogMappingService } from '../application/catalog-mapping.service.js';
 export { CatalogFacts, type ProductFacts, type ProductFactsFilter } from '../application/catalog-facts.js';
+export { CatalogQuery, cleanDescription, type ProductSort, type ProductCard, type PublicPrice } from '../application/catalog-query.js';

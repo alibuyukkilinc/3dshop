@@ -1,30 +1,36 @@
-/**
- * Ana sayfa iskeleti (F0.5). Sunucuda üretilir (SSR). Gerçek içerik F2'de (2D vitrin, mağaza ve ürün sayfaları)
- * ve F4'te (3D şehir kabuğu) gelir.
- */
-const DISTRICTS = [
-  ['Merkez Meydan', 'Şehre giriş, tramvay durağı ve yönlendirme'],
-  ['Enerji Çarşısı', 'Solar paneller, inverterler ve aküler'],
-  ['Eğitim Sokağı', 'Deneme sınavları ve eğitim yayınları'],
-] as const;
+import Link from 'next/link';
+import { type Store, apiGet } from '../lib/api';
 
-export default function HomePage() {
+export const revalidate = 60;
+
+/** Ana sayfa: yayındaki mağazalar (2D vitrin, F2.3). 3D şehir kabuğu F4'te. */
+export default async function HomePage() {
+  const { items } = await apiGet<{ items: Store[] }>('/stores');
   return (
-    <main className="mx-auto max-w-4xl px-4 py-12">
-      <p className="text-xs font-semibold tracking-wide text-accent uppercase">Yakında</p>
-      <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Dijital Ticaret Dünyası</h1>
+    <main className="mx-auto max-w-6xl px-4 py-10">
+      <h1 className="text-3xl font-semibold sm:text-4xl">Dijital Ticaret Dünyası</h1>
       <p className="mt-3 max-w-2xl text-muted">
-        Gerçek mağazaları gezilebilir bir 3D alışveriş şehrinde ve klasik 2D katalogda bir araya getiriyoruz.
-        Satın alma, mağazanın kendi sitesinde güvenle tamamlanır.
+        Gerçek mağazaların ürünleri tek yerde. Fiyat ve stok mağazaların kendi sitesinden gelir; satın alma mağazanın sitesinde
+        tamamlanır.
       </p>
-      <ul className="mt-8 grid gap-3 sm:grid-cols-3">
-        {DISTRICTS.map(([name, text]) => (
-          <li key={name} className="rounded-lg border border-line bg-surface p-4">
-            <h2 className="font-medium">{name}</h2>
-            <p className="mt-1 text-sm text-muted">{text}</p>
-          </li>
-        ))}
-      </ul>
+      <h2 className="mt-10 text-xl font-semibold">Mağazalar</h2>
+      {items.length === 0 ? (
+        <p className="mt-3 text-muted">Yakında: mağazalar yayına hazırlanıyor.</p>
+      ) : (
+        <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((s) => (
+            <li key={s.id}>
+              <Link
+                href={`/magaza/${s.slug}`}
+                className="block h-full rounded-lg border border-line bg-surface p-4 hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                <p className="font-medium">{s.name}</p>
+                <p className="mt-1 text-sm text-muted">{s.product_count} ürün</p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </main>
   );
 }

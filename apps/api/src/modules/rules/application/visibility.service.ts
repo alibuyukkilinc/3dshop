@@ -162,6 +162,28 @@ export class VisibilityService {
     };
   }
 
+  /** Görünür hedeflerin sıralama katsayısı (boost ≠ 1 olanlar). */
+  async boosts(targetType: 'product' | 'store', channel: Channel): Promise<Map<string, number>> {
+    const rows = await this.prisma.visibilityResolved.findMany({
+      where: { targetType, channel, visible: true, NOT: { boost: 1 } },
+      select: { targetId: true, boost: true },
+    });
+    return new Map(rows.map((r) => [r.targetId, Number(r.boost)]));
+  }
+
+  /** Bir mağazanın kanalda görünen ürünleri: ürün olgusundaki mağaza kimliğinden (explanation değil, olgu tablosu yok). */
+  async visibleProductIdsOfStore(storeId: string, channel: Channel): Promise<string[]> {
+    const products = await this.catalog.products({ storeIds: [storeId] });
+    const visible = await this.visibleIds('product', channel, products.map((p) => p.id));
+    return products.filter((p) => visible.has(p.id)).map((p) => p.id);
+  }
+
+  async visibleProductCountsByStore(channel: Channel, storeIds: string[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    for (const id of storeIds) out.set(id, (await this.visibleProductIdsOfStore(id, channel)).length);
+    return out;
+  }
+
   /** Bir kanalda görünen ürün kimlikleri (vitrin, arama). */
   async visibleIds(targetType: 'product' | 'store', channel: Channel, ids?: string[]): Promise<Set<string>> {
     const rows = await this.prisma.visibilityResolved.findMany({

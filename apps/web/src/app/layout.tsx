@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
+import { SiteFooter, SiteHeader } from '../components/site-header';
 import { isIndexable, siteUrl } from '../lib/site';
 import './globals.css';
 
@@ -22,7 +23,14 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="tr">
-      <body>{children}</body>
+      <body>
+        <a href="#icerik" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:rounded focus:bg-surface focus:px-3 focus:py-2">
+          İçeriğe geç
+        </a>
+        <SiteHeader />
+        <div id="icerik">{children}</div>
+        <SiteFooter />
+      </body>
     </html>
   );
 }

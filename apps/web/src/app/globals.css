@@ -7,6 +7,9 @@
   --muted: #5b6475;
   --line: #e2e6ee;
   --accent: #0f766e;
+  --accent-ink: #ffffff;
+  --ok: #067647;
+  --warn: #a15c07;
   color-scheme: light;
 }
 
@@ -18,6 +21,9 @@
     --muted: #9aa4b6;
     --line: #253049;
     --accent: #2dd4bf;
+    --accent-ink: #062b27;
+    --ok: #47cd89;
+    --warn: #fdb022;
     color-scheme: dark;
   }
 }
@@ -29,6 +35,9 @@
   --color-muted: var(--muted);
   --color-line: var(--line);
   --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
 }
 
 html,
@@ -41,4 +50,35 @@ body {
     'Segoe UI',
     Roboto,
     sans-serif;
+}
+
+/* Kaynak ürün açıklaması (temizlenmiş HTML) için okunabilir varsayılanlar */
+.prose-dtd {
+  line-height: 1.65;
+}
+.prose-dtd p,
+.prose-dtd ul,
+.prose-dtd ol,
+.prose-dtd table,
+.prose-dtd blockquote {
+  margin-block: 0.75em;
+}
+.prose-dtd ul {
+  list-style: disc;
+  padding-left: 1.25em;
+}
+.prose-dtd ol {
+  list-style: decimal;
+  padding-left: 1.25em;
+}
+.prose-dtd h2,
+.prose-dtd h3,
+.prose-dtd h4 {
+  font-weight: 600;
+  margin-block: 1em 0.5em;
+}
+.prose-dtd td,
+.prose-dtd th {
+  border: 1px solid var(--line);
+  padding: 0.25em 0.5em;
 }
