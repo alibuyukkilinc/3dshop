@@ -30,21 +30,6 @@
         "dev"
       ],
       "port": 3101
-    },
-    {
-      "name": "lab",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": [
-        "--filter",
-        "@dtd/engine-lab",
-        "exec",
-        "vite",
-        "preview",
-        "--port",
-        "5175",
-        "--strictPort"
-      ],
-      "port": 5175
     }
   ]
 }

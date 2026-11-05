@@ -1,0 +1,24 @@
+{
+  "name": "@dtd/engine-three",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "dtd.scene.v1 belgesini Three.js ile çizen adaptör (K63). Sahne verisi motor bağımsız kalır (K20, K45).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dtd/scene-runtime": "workspace:*",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@dtd/config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/three": "0.186.0",
+    "vitest": "^5.0.2"
+  }
+}
