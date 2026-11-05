@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { type Store, apiGet } from '../lib/api';
 
-export const revalidate = 60;
+// İstek anında üretilir: derleme sırasında API'ye bağlanmaz (deploy'da API henüz eski sürümde olabilir).
+// Veri yine 60 sn önbellekte (apiGet revalidate).
+export const dynamic = 'force-dynamic';
 
 /** Ana sayfa: yayındaki mağazalar (2D vitrin, F2.3). 3D şehir kabuğu F4'te. */
 export default async function HomePage() {
