@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { type RedirectChannel, RedirectsService } from '../../analytics/public/index.js';
 import { CatalogQuery, type ProductSort } from '../../catalog/public/index.js';
 import { CommerceFacts } from '../../commerce/public/index.js';
 import { type Channel, VisibilityService } from '../../rules/public/index.js';
@@ -15,7 +16,43 @@ export class StorefrontService {
     private readonly visibility: VisibilityService,
     private readonly catalog: CatalogQuery,
     private readonly commerce: CommerceFacts,
+    private readonly redirects: RedirectsService,
   ) {}
+
+  /** Arama (search kanalı): görünen ürünler arasında; mağaza gizliyse ürün de gizli (mağaza kuralı ürüne uygulanır). */
+  async search(q: string, page: number) {
+    const ids = [...(await this.visibility.visibleIds('product', 'search'))];
+    const r = await this.catalog.search(q, ids, (page - 1) * PAGE_SIZE, PAGE_SIZE);
+    const stores = await this.commerce.publicStores([...new Set(r.items.map((i) => i.store_id))]);
+    const storeBy = new Map(stores.map((s) => [s.id, { slug: s.slug, name: s.name }]));
+    return { q, total: r.total, page, page_size: PAGE_SIZE, items: r.items.map((i) => ({ ...i, store: storeBy.get(i.store_id) ?? null })) };
+  }
+
+  /**
+   * "Sitede satın al" (K53): ürün kanalda görünür ve kaynak adresi varsa yönlendirme kaydı açılır, hedef
+   * dtd_rid ile döner. Hedef istemciden alınmaz (açık yönlendirme yok).
+   */
+  async goto(productId: string, channel: RedirectChannel): Promise<string | null> {
+    const visibleIn = channel === '3d' || channel === 'ai' || channel === 'search' ? channel : '2d';
+    if (!(await this.visibility.visibleIds('product', visibleIn, [productId])).has(productId)) return null;
+    const p = await this.catalog.detail(productId);
+    if (!p?.source_url) return null;
+    const r = await this.redirects.create({
+      productId,
+      storeId: p.store_id,
+      sourceSiteId: p.source_site_id,
+      channel,
+      targetUrl: p.source_url,
+    });
+    return r.url;
+  }
+
+  /** Site haritası (seo kanalı, K9): yayındaki mağazalar ve ürünler. */
+  async sitemap() {
+    const [storeIds, productIds] = await Promise.all([this.visibility.visibleIds('store', 'seo'), this.visibility.visibleIds('product', 'seo')]);
+    const [stores, products] = await Promise.all([this.commerce.publicStores([...storeIds]), this.catalog.names([...productIds])]);
+    return { stores: stores.map((s) => ({ slug: s.slug })), products };
+  }
 
   async stores(channel: Channel = '2d') {
     const storeIds = [...(await this.visibility.visibleIds('store', channel))];

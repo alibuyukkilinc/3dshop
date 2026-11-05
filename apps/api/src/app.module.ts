@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DbModule } from './infra/db/db.module.js';
 import { HealthController } from './infra/http/health.controller.js';
+import { AnalyticsModule } from './modules/analytics/public/index.js';
 import { AuditModule } from './modules/audit/public/index.js';
 import { CatalogModule } from './modules/catalog/public/index.js';
 import { CommerceModule } from './modules/commerce/public/index.js';
@@ -13,7 +14,7 @@ import { PublishingModule } from './modules/publishing/public/index.js';
 import { RulesModule } from './modules/rules/public/index.js';
 
 @Module({
-  imports: [DbModule, PlatformModule, AuditModule, IdentityModule, OpsModule, CommerceModule, CatalogModule, IntegrationModule, RulesModule, PublishingModule, DiscoveryModule],
+  imports: [DbModule, PlatformModule, AuditModule, IdentityModule, OpsModule, CommerceModule, CatalogModule, IntegrationModule, RulesModule, PublishingModule, DiscoveryModule, AnalyticsModule],
   controllers: [HealthController],
 })
 export class AppModule {}

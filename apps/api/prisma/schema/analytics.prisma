@@ -1,0 +1,36 @@
+// Modül: modules/analytics. Kaynak siteye yönlendirme ve dönüşüm (K53, K15). Kişisel veri tutulmaz.
+// Ürün, mağaza ve kaynak site başka modüllerdedir: yalnız kimlik (K32).
+
+/// "Sitede satın al" tıklaması: kaynak URL'ye dtd_rid = id ile gidilir; sipariş olayı bu kimlikle eşlenir.
+model Redirect {
+  id           String   @id @db.Uuid
+  productId    String   @map("product_id") @db.Uuid
+  storeId      String   @map("store_id") @db.Uuid
+  sourceSiteId String?  @map("source_site_id") @db.Uuid
+  /// 2d | 3d | search | ai
+  channel      String
+  targetUrl    String   @map("target_url")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([productId, createdAt])
+  @@index([storeId, createdAt])
+  @@map("redirects")
+  @@schema("analytics")
+}
+
+/// Kaynak sitenin sipariş olayının yönlendirmeyle eşlenmesi (F5: eticaret order.created + dtd_rid).
+model Conversion {
+  id              String    @id @db.Uuid
+  redirectId      String?   @map("redirect_id") @db.Uuid
+  sourceSiteId    String    @map("source_site_id") @db.Uuid
+  externalOrderId String    @map("external_order_id")
+  amountMinor     BigInt?   @map("amount_minor")
+  currency        String?   @db.Char(3)
+  matchedAt       DateTime? @map("matched_at") @db.Timestamptz(3)
+  receivedAt      DateTime  @map("received_at") @db.Timestamptz(3)
+
+  @@unique([sourceSiteId, externalOrderId])
+  @@index([redirectId])
+  @@map("conversions")
+  @@schema("analytics")
+}

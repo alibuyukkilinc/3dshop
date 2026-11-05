@@ -1,4 +1,5 @@
-import { Controller, Get, Header, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { Controller, Get, Header, NotFoundException, Param, ParseUUIDPipe, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { z } from 'zod';
 import { parseInput } from '../../../infra/http/admin-request.js';
 import { StorefrontService } from '../application/storefront.service.js';
@@ -14,6 +15,9 @@ const ProductsQuery = z.object({
     .transform(() => true)
     .optional(),
 });
+
+const SearchQuery = z.object({ q: z.string().trim().min(1).max(100), page: z.coerce.number().int().min(1).max(50).default(1) });
+const GoQuery = z.object({ ch: z.enum(['2d', '3d', 'search', 'ai']).default('2d') });
 
 const notFound = () => new NotFoundException({ error: 'not_found', message: 'Bulunamadı.' });
 
@@ -45,6 +49,29 @@ export class PublicCatalogController {
     const r = await this.storefront.storeProducts(parseInput(Slug, slug), parseInput(ProductsQuery, query));
     if (!r) throw notFound();
     return r;
+  }
+
+  @Get('search')
+  @Header('Cache-Control', 'public, max-age=60')
+  async search(@Query() query: unknown) {
+    const q = parseInput(SearchQuery, query);
+    return this.storefront.search(q.q, q.page);
+  }
+
+  /** Kaynak siteye yönlendirme (K53). Her istek bir kayıt açar: önbelleğe alınmaz, arama motoruna kapalı. */
+  @Get('go/:id')
+  async go(@Param('id', ParseUUIDPipe) id: string, @Query() query: unknown, @Res() res: Response) {
+    const url = await this.storefront.goto(id, parseInput(GoQuery, query).ch);
+    if (!url) throw notFound();
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    res.redirect(302, url);
+  }
+
+  @Get('sitemap')
+  @Header('Cache-Control', 'public, max-age=300')
+  sitemap() {
+    return this.storefront.sitemap();
   }
 
   @Get('products/:id')

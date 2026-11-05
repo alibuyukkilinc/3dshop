@@ -23,3 +23,19 @@ export function slugify(text: string): string {
 }
 
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const FOLD_FROM = 'ÇĞİIÖŞÜçğıöşüÂâÎîÛû';
+const FOLD_TO = 'cgiiosucgiosuaaiiuu';
+
+/**
+ * Arama katlaması: veritabanındaki catalog.fold_tr() ile birebir aynı kural (göç f2_search_fold).
+ * Türkçe harfler sabit tabloyla ASCII'ye, sonra ASCII küçük harf. "Güneş İNVERTER" → "gunes inverter".
+ */
+export function foldTr(text: string): string {
+  let out = '';
+  for (const ch of text) {
+    const i = FOLD_FROM.indexOf(ch);
+    out += i >= 0 ? FOLD_TO[i] : ch;
+  }
+  return out.replace(/[A-Z]/g, (c) => c.toLowerCase());
+}

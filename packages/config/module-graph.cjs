@@ -20,7 +20,8 @@ module.exports = {
   placement: [...KERNEL, 'rules', 'catalog', 'scene'],
   publishing: [...KERNEL],
   delivery: [...KERNEL, 'scene', 'placement', 'rules', 'assets', 'world', 'catalog'],
-  discovery: [...KERNEL, 'catalog', 'commerce', 'world', 'rules'],
+  // discovery → analytics: "Sitede satın al" yönlendirmesi analytics.RedirectService'e yazar (K53, F2.4)
+  discovery: [...KERNEL, 'catalog', 'commerce', 'world', 'rules', 'analytics'],
   analytics: [...KERNEL],
   seo: [...KERNEL, 'catalog', 'commerce', 'world', 'rules'],
 };

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { foldTr } from '@dtd/contracts';
 import sanitizeHtml from 'sanitize-html';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infra/db/prisma.service.js';
@@ -156,6 +157,7 @@ export class CatalogQuery {
     return {
       id: p.id,
       store_id: p.storeId,
+      source_site_id: p.sourceSiteId,
       brand_id: p.brandId,
       name: p.i18n[0]?.name ?? `#${p.externalId}`,
       description_html: cleanDescription(p.i18n[0]?.descriptionHtml ?? ''),
@@ -178,6 +180,50 @@ export class CatalogQuery {
       source_url: p.sourceUrl,
       synced_at: p.syncedAt.toISOString(),
     };
+  }
+
+  /**
+   * Arama (K35). Ad ve açıklama Türkçe katlanır (catalog.fold_tr, yerel ayardan bağımsız); her kelime terim
+   * başı olarak eşleşir ("inverter" → "inverterler"), ad üzerinde trigram yazım hatasını tolere eder.
+   * Yalnız verilen kimlikler arasında (çağıran search kanalında görünenleri verir). Ad eşleşmesi önce gelir.
+   */
+  async search(q: string, productIds: string[], offset: number, limit: number): Promise<{ total: number; items: ProductCard[] }> {
+    const folded = foldTr(q.trim().slice(0, 100));
+    // tsquery yalnız [a-z0-9] kelimelerden kurulur: kullanıcı girdisi sorgu sözdizimine sızamaz
+    const words = folded.split(/[^a-z0-9]+/).filter(Boolean).slice(0, 8);
+    if (words.length === 0 || productIds.length === 0) return { total: 0, items: [] };
+    const tsq = words.map((w) => `${w}:*`).join(' & ');
+    const phrase = words.join(' ');
+    const like = `%${phrase}%`;
+    const rows = await this.prisma.$queryRaw<{ id: string; score: number }[]>`
+      SELECT i.product_id AS id,
+             (CASE WHEN catalog.fold_tr(i.name) LIKE ${like} THEN 2 ELSE 0 END)
+             + ts_rank(to_tsvector('simple', catalog.fold_tr(i.name || ' ' || i.description_html)), to_tsquery('simple', ${tsq}))
+             + similarity(catalog.fold_tr(i.name), ${phrase}) AS score
+      FROM catalog.catalog_products_i18n i
+      WHERE i.locale = 'tr'
+        AND i.product_id = ANY(${productIds}::uuid[])
+        AND (
+          to_tsvector('simple', catalog.fold_tr(i.name || ' ' || i.description_html)) @@ to_tsquery('simple', ${tsq})
+          OR similarity(catalog.fold_tr(i.name), ${phrase}) > 0.3
+        )
+      ORDER BY score DESC, i.name
+      LIMIT 500`;
+    const page = rows.slice(offset, offset + limit).map((r) => r.id);
+    if (page.length === 0) return { total: rows.length, items: [] };
+    const cards = await this.list({ productIds: page, sort: 'name', offset: 0, limit: page.length });
+    const byId = new Map(cards.items.map((c) => [c.id, c]));
+    return { total: rows.length, items: page.map((id) => byId.get(id)).filter((c): c is ProductCard => Boolean(c)) };
+  }
+
+  /** Site haritası: ad ve son eşitleme zamanı. */
+  async names(productIds: string[]): Promise<{ id: string; name: string; updated_at: string }[]> {
+    if (productIds.length === 0) return [];
+    const rows = await this.prisma.catalogProduct.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, syncedAt: true, i18n: { where: { locale: LOCALE }, select: { name: true } } },
+    });
+    return rows.map((r) => ({ id: r.id, name: r.i18n[0]?.name ?? '', updated_at: r.syncedAt.toISOString() }));
   }
 
   /** Kategori ve tüm alt kategorileri. */

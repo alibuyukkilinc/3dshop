@@ -152,7 +152,7 @@ export default async function ProductPage({ params }: { params: Params }) {
 
           {p.source_url && (
             <a
-              href={p.source_url}
+              href={`/r/${p.id}?ch=2d`}
               rel="nofollow noopener"
               target="_blank"
               className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-md bg-accent px-6 font-medium text-accent-ink hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:w-auto"

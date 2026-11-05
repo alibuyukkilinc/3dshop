@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { SLUG_RE, normalizeKey, slugify } from './text.js';
+import { SLUG_RE, foldTr, normalizeKey, slugify } from './text.js';
 
 describe('metin anahtarları', () => {
   it('normalizeKey Türkçe küçük harf ve boşluk', () => {
     expect(normalizeKey('  İNVERTER   Grubu ')).toBe('inverter grubu');
     expect(normalizeKey('DEYE')).toBe(normalizeKey('Deye'));
+  });
+  it('foldTr veritabanındaki fold_tr ile aynı kural', () => {
+    expect(foldTr('Güneş İNVERTER Şarj ÇIĞ Ölçüm')).toBe('gunes inverter sarj cig olcum');
+    expect(foldTr('ÂLÎ ÛMÛT')).toBe('ali umut');
   });
   it('slugify Türkçe karakterleri çevirir', () => {
     expect(slugify('Güneş Enerjisi & Depolama')).toBe('gunes-enerjisi-depolama');

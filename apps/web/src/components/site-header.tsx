@@ -3,10 +3,23 @@ import Link from 'next/link';
 export function SiteHeader() {
   return (
     <header className="border-b border-line bg-surface">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
         <Link href="/" className="font-semibold">
           Dijital Ticaret Dünyası
         </Link>
+        <form action="/ara" role="search" className="order-last w-full sm:order-none sm:w-auto sm:flex-1 sm:max-w-md">
+          <label htmlFor="site-ara" className="sr-only">
+            Ürün ara
+          </label>
+          <input
+            id="site-ara"
+            name="q"
+            type="search"
+            placeholder="Ürün ara: inverter, akü, deneme…"
+            maxLength={100}
+            className="h-10 w-full rounded-md border border-line bg-bg px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+          />
+        </form>
         <nav aria-label="Ana menü">
           <ul className="flex gap-4 text-sm">
             <li>

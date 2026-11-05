@@ -120,6 +120,41 @@ describe.skipIf(!hasDatabase)('herkese açık katalog API (F2.3)', () => {
     expect((await get(`/products/${await pid('102')}`)).status).toBe(404);
 
     const bodies = await Promise.all(['/stores', '/stores/esensolarmarket', '/stores/esensolarmarket/products', `/products/${await pid('101')}`].map(get));
-    for (const b of bodies) expect(JSON.stringify(b.body)).not.toMatch(/buy_price|777|Tedarikçi|supplier/i);
+    for (const b of bodies) expect(JSON.stringify(b.body)).not.toMatch(/buy_price|777.77|Tedarikçi|supplier/i);
+  });
+
+  it('arama (F2.4, K35): ad, açıklama kökü ve yazım hatası; gizli ürün çıkmaz', async () => {
+    const names = async (q: string) => (await get(`/search?q=${encodeURIComponent(q)}`)).body.items.map((i: { name: string }) => i.name);
+    expect((await names('Ürün 103'))[0]).toBe('Ürün 103'); // tam eşleşme önce; benzer adlar arkada
+    expect((await names('AÇIKLAMA')).length).toBe(3); // açıklama metninde, büyük harf ve Türkçe harf farkı yok
+    expect((await names('urun 101'))[0]).toBe('Ürün 101'); // katlama: ü/u farkı
+    expect(await names('acik')).toHaveLength(3); // terim başı eşleşmesi
+    expect((await names('Ürüm 101'))[0]).toBe('Ürün 101'); // trigram: yazım hatası
+    expect(await names("x' | !")).toEqual([]); // sorgu sözdizimi sızmaz
+    expect(await names('Ürün 102')).not.toContain('Ürün 102'); // kaynakta pasif
+    const r = (await get('/search?q=101')).body;
+    expect(r.items[0]).toMatchObject({ name: 'Ürün 101', store: { slug: 'esensolarmarket' } });
+    expect((await get('/search?q=')).status).toBe(400);
+  });
+
+  it('yönlendirme (K53): kayıt açılır, kaynak adrese dtd_rid ile 302; gizli ürün 404; hedef istemciden alınmaz', async () => {
+    const res = await get(`/go/${await pid('101')}?ch=2d`);
+    expect(res.status).toBe(302);
+    expect(res.headers['cache-control']).toBe('no-store');
+    const url = new URL(res.headers.location!);
+    expect(url.origin + url.pathname).toBe('https://esensolarmarket.com/tr/urun-101');
+    const rid = url.searchParams.get('dtd_rid')!;
+    expect(url.searchParams.get('utm_source')).toBe('dtd');
+    const row = await prisma.redirect.findUniqueOrThrow({ where: { id: rid } });
+    expect(row).toMatchObject({ channel: '2d', productId: await pid('101') });
+    expect((await get(`/go/${await pid('102')}`)).status).toBe(404);
+    expect((await get(`/go/${await pid('104')}`)).status).toBe(404); // kaynak adresi yok (hideprice örneği)
+    expect((await get(`/go/${await pid('101')}?ch=2d&url=https://evil.example`)).headers.location).toContain('esensolarmarket.com');
+  });
+
+  it('site haritası (seo kanalı): yayındaki mağaza ve ürünler', async () => {
+    const s = (await get('/sitemap')).body;
+    expect(s.stores).toEqual([{ slug: 'esensolarmarket' }]);
+    expect(s.products.map((p: { name: string }) => p.name).sort()).toEqual(['Ürün 101', 'Ürün 103', 'Ürün 104']);
   });
 });
