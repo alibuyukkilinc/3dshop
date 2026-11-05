@@ -30,7 +30,12 @@ export interface Source {
   circuit_open_until: string | null;
   last_error: string | null;
   catalog: { total: number; active: number; priced: number; unmapped_categories: number };
-  webhook: { has_secret: boolean; last_received_at: string | null; pending: number; failed: number };
+  webhook: {
+    has_secret: boolean;
+    last_received_at: string | null;
+    pending: number;
+    failed: number;
+  };
 }
 interface Run {
   id: string;
@@ -52,9 +57,10 @@ const HEALTH: Record<Health, [string, Tone]> = {
 
 /** Kaynak siteler ve eşitleme izleme (F1.3). */
 export function SourcesPage({ canWrite }: { canWrite: boolean }) {
-  const { data, error, loading, reload } = useResource<{ items: Source[]; delta_interval_minutes: number }>(
-    '/admin/v1/integration/sources',
-  );
+  const { data, error, loading, reload } = useResource<{
+    items: Source[];
+    delta_interval_minutes: number;
+  }>('/admin/v1/integration/sources');
   const [open, setOpen] = useState<string | null>(null);
   const [tokenFor, setTokenFor] = useState<string | null>(null);
   const action = useAction();
@@ -114,19 +120,31 @@ export function SourcesPage({ canWrite }: { canWrite: boolean }) {
                           onClick={() => setOpen(expanded ? null : s.code)}
                           className="rounded p-1 text-muted hover:bg-surface-2"
                         >
-                          {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                          {expanded ? (
+                            <ChevronDown className="size-4" />
+                          ) : (
+                            <ChevronRight className="size-4" />
+                          )}
                         </button>
                       </td>
                       <td className="p-3">
                         <p className="font-medium">{s.code}</p>
-                        <a href={s.base_url} target="_blank" rel="noreferrer" className="text-xs text-muted hover:underline">
+                        <a
+                          href={s.base_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-muted hover:underline"
+                        >
                           {s.base_url.replace(/^https?:\/\//, '')}
                         </a>
                       </td>
                       <td className="p-3">
                         <Badge tone={tone}>{label}</Badge>
                         {s.consecutive_failures > 0 && (
-                          <p className="mt-1 max-w-56 text-xs text-danger" title={s.last_error ?? ''}>
+                          <p
+                            className="mt-1 max-w-56 text-xs text-danger"
+                            title={s.last_error ?? ''}
+                          >
                             {s.consecutive_failures}× · {s.last_error}
                           </p>
                         )}
@@ -152,7 +170,12 @@ export function SourcesPage({ canWrite }: { canWrite: boolean }) {
                       {canWrite && (
                         <td className="p-3">
                           <div className="flex justify-end gap-1">
-                            <Button variant="ghost" className="h-8 px-2" onClick={() => setTokenFor(s.code)} title="Token gir">
+                            <Button
+                              variant="ghost"
+                              className="h-8 px-2"
+                              onClick={() => setTokenFor(s.code)}
+                              title="Token gir"
+                            >
                               <KeyRound className="size-4" aria-hidden />
                               <span className="sr-only">{s.code} token gir</span>
                             </Button>
@@ -163,7 +186,11 @@ export function SourcesPage({ canWrite }: { canWrite: boolean }) {
                               busy={action.busy}
                               onClick={() =>
                                 void act(
-                                  () => api(`/admin/v1/integration/sources/${s.code}/sync`, { method: 'POST', body: { kind: 'full' } }),
+                                  () =>
+                                    api(`/admin/v1/integration/sources/${s.code}/sync`, {
+                                      method: 'POST',
+                                      body: { kind: 'full' },
+                                    }),
                                   `${s.code}: tam eşitleme sıraya alındı, bir dakika içinde başlar.`,
                                 )
                               }
@@ -181,12 +208,20 @@ export function SourcesPage({ canWrite }: { canWrite: boolean }) {
                                       method: 'PUT',
                                       body: { status: s.status === 'active' ? 'paused' : 'active' },
                                     }),
-                                  s.status === 'active' ? `${s.code} durduruldu.` : `${s.code} yeniden eşitlenecek.`,
+                                  s.status === 'active'
+                                    ? `${s.code} durduruldu.`
+                                    : `${s.code} yeniden eşitlenecek.`,
                                 )
                               }
                             >
-                              {s.status === 'active' ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
-                              <span className="sr-only">{s.status === 'active' ? 'Durdur' : 'Devam ettir'}</span>
+                              {s.status === 'active' ? (
+                                <Pause className="size-4" aria-hidden />
+                              ) : (
+                                <Play className="size-4" aria-hidden />
+                              )}
+                              <span className="sr-only">
+                                {s.status === 'active' ? 'Durdur' : 'Devam ettir'}
+                              </span>
                             </Button>
                           </div>
                         </td>
@@ -225,12 +260,22 @@ export function SourcesPage({ canWrite }: { canWrite: boolean }) {
   );
 }
 
-function TokenForm({ code, onDone, onCancel }: { code: string; onDone: (msg: string) => void; onCancel: () => void }) {
+function TokenForm({
+  code,
+  onDone,
+  onCancel,
+}: {
+  code: string;
+  onDone: (msg: string) => void;
+  onCancel: () => void;
+}) {
   const [token, setToken] = useState('');
   const action = useAction();
   async function submit(e: FormEvent) {
     e.preventDefault();
-    const r = await action.run(() => api(`/admin/v1/integration/sources/${code}/token`, { method: 'PUT', body: { token } }));
+    const r = await action.run(() =>
+      api(`/admin/v1/integration/sources/${code}/token`, { method: 'PUT', body: { token } }),
+    );
     if (r.ok) {
       setToken('');
       onDone(`${code}: token kaydedildi. Eşitleme bir dakika içinde başlar.`);
@@ -269,7 +314,9 @@ const RUN_STATUS: Record<Run['status'], [string, Tone]> = {
 };
 
 function SourceDetail({ source, canWrite }: { source: Source; canWrite: boolean }) {
-  const { data, error } = useResource<{ items: Run[] }>(`/admin/v1/integration/sources/${source.code}/runs?limit=15`);
+  const { data, error } = useResource<{ items: Run[] }>(
+    `/admin/v1/integration/sources/${source.code}/runs?limit=15`,
+  );
   return (
     <div className="space-y-3">
       <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-3">
@@ -299,7 +346,10 @@ function SourceDetail({ source, canWrite }: { source: Source; canWrite: boolean 
               <th className="py-1 text-right font-medium">Güncellenen</th>
               <th className="py-1 text-right font-medium">Değişmeyen</th>
               <th className="py-1 text-right font-medium">Kaynakta yok</th>
-              <th className="py-1 text-right font-medium" title="Gece uzlaştırmasının bulduğu, değişiklik eşitlemesinin kaçırdığı fark">
+              <th
+                className="py-1 text-right font-medium"
+                title="Gece uzlaştırmasının bulduğu, değişiklik eşitlemesinin kaçırdığı fark"
+              >
                 Sapma
               </th>
             </tr>
@@ -318,7 +368,9 @@ function SourceDetail({ source, canWrite }: { source: Source; canWrite: boolean 
                 <td className="py-1 text-right tabular-nums">{r.stats.updated ?? 0}</td>
                 <td className="py-1 text-right tabular-nums">{r.stats.unchanged ?? 0}</td>
                 <td className="py-1 text-right tabular-nums">{r.stats.removed ?? 0}</td>
-                <td className="py-1 text-right tabular-nums">{r.kind === 'full' ? (r.stats.drift_ids?.length ?? 0) : '—'}</td>
+                <td className="py-1 text-right tabular-nums">
+                  {r.kind === 'full' ? (r.stats.drift_ids?.length ?? 0) : '—'}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -348,27 +400,50 @@ const HOOK_STATUS: Record<WebhookEvent['status'], [string, Tone]> = {
 
 /** Gelen webhook'lar (F1.4): kaynak site olay yayını açınca değişiklikler saniyeler içinde gelir. */
 function WebhookPanel({ source, canWrite }: { source: Source; canWrite: boolean }) {
-  const events = useResource<{ items: WebhookEvent[] }>(`/admin/v1/integration/sources/${source.code}/webhooks?limit=10`);
+  const events = useResource<{ items: WebhookEvent[] }>(
+    `/admin/v1/integration/sources/${source.code}/webhooks?limit=10`,
+  );
   const action = useAction();
   const [issued, setIssued] = useState<{ secret: string; url: string } | null>(null);
 
   async function rotate() {
-    if (source.webhook.has_secret && !window.confirm('Yeni sır üretilince eskisi hemen geçersiz olur. Kaynak sitedeki ayar da güncellenmeli. Devam edilsin mi?')) return;
+    if (
+      source.webhook.has_secret &&
+      !window.confirm(
+        'Yeni sır üretilince eskisi hemen geçersiz olur. Kaynak sitedeki ayar da güncellenmeli. Devam edilsin mi?',
+      )
+    )
+      return;
     const r = await action.run(() =>
-      api<{ secret: string; url_path: string }>(`/admin/v1/integration/sources/${source.code}/webhook-secret`, { method: 'POST' }),
+      api<{ secret: string; url_path: string }>(
+        `/admin/v1/integration/sources/${source.code}/webhook-secret`,
+        { method: 'POST' },
+      ),
     );
-    if (r.ok) setIssued({ secret: r.value.secret, url: `${window.location.origin}${r.value.url_path}` });
+    if (r.ok)
+      setIssued({ secret: r.value.secret, url: `${window.location.origin}${r.value.url_path}` });
   }
 
   return (
     <div className="space-y-2 border-t border-line pt-3">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs font-semibold tracking-wide text-muted uppercase">Webhook</p>
-        <Badge tone={source.webhook.has_secret ? 'ok' : 'muted'}>{source.webhook.has_secret ? 'sır tanımlı' : 'sır yok'}</Badge>
-        <span className="text-xs text-muted">son olay: {fmtAgo(source.webhook.last_received_at)}</span>
-        {source.webhook.failed > 0 && <Badge tone="danger">{source.webhook.failed} başarısız</Badge>}
+        <Badge tone={source.webhook.has_secret ? 'ok' : 'muted'}>
+          {source.webhook.has_secret ? 'sır tanımlı' : 'sır yok'}
+        </Badge>
+        <span className="text-xs text-muted">
+          son olay: {fmtAgo(source.webhook.last_received_at)}
+        </span>
+        {source.webhook.failed > 0 && (
+          <Badge tone="danger">{source.webhook.failed} başarısız</Badge>
+        )}
         {canWrite && (
-          <Button variant="ghost" className="ml-auto h-8 px-2 text-xs" busy={action.busy} onClick={() => void rotate()}>
+          <Button
+            variant="ghost"
+            className="ml-auto h-8 px-2 text-xs"
+            busy={action.busy}
+            onClick={() => void rotate()}
+          >
             {source.webhook.has_secret ? 'Sırrı yenile' : 'Sır üret'}
           </Button>
         )}
@@ -376,7 +451,9 @@ function WebhookPanel({ source, canWrite }: { source: Source; canWrite: boolean 
       {action.error && <Alert>{action.error}</Alert>}
       {issued && (
         <div className="rounded-md border border-warn bg-warn-bg p-3 text-xs text-ink">
-          <p className="font-medium">Bu sır yalnız şimdi gösteriliyor. Kaynak sitenin webhook ayarına girin:</p>
+          <p className="font-medium">
+            Bu sır yalnız şimdi gösteriliyor. Kaynak sitenin webhook ayarına girin:
+          </p>
           <dl className="mt-2 grid gap-1 font-mono break-all">
             <div>
               <dt className="inline text-muted">Adres: </dt>
@@ -387,7 +464,9 @@ function WebhookPanel({ source, canWrite }: { source: Source; canWrite: boolean 
               <dd className="inline">{issued.secret}</dd>
             </div>
           </dl>
-          <p className="mt-2 text-muted">İmza: X-DTD-Signature = HMAC-SHA256(sır, X-DTD-Timestamp + "." + gövde), onaltılık.</p>
+          <p className="mt-2 text-muted">
+            İmza: X-DTD-Signature = HMAC-SHA256(sır, X-DTD-Timestamp + "." + gövde), onaltılık.
+          </p>
         </div>
       )}
       {events.data && events.data.items.length > 0 && (

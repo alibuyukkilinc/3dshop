@@ -8,10 +8,11 @@ import { IdentityModule } from './modules/identity/public/index.js';
 import { IntegrationModule } from './modules/integration/public/index.js';
 import { OpsModule } from './modules/ops/public/index.js';
 import { PlatformModule } from './modules/platform/public/index.js';
+import { PublishingModule } from './modules/publishing/public/index.js';
 import { RulesModule } from './modules/rules/public/index.js';
 
 @Module({
-  imports: [DbModule, PlatformModule, AuditModule, IdentityModule, OpsModule, CommerceModule, CatalogModule, IntegrationModule, RulesModule],
+  imports: [DbModule, PlatformModule, AuditModule, IdentityModule, OpsModule, CommerceModule, CatalogModule, IntegrationModule, RulesModule, PublishingModule],
   controllers: [HealthController],
 })
 export class AppModule {}

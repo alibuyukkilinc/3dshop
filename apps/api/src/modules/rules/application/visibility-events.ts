@@ -21,6 +21,7 @@ export class VisibilityEventHandler implements EventHandler {
     'commerce.store.updated',
     'commerce.store.published',
     'commerce.store.archived',
+    'rules.ruleset.published',
   ];
 
   constructor(private readonly visibility: VisibilityService) {}
@@ -32,6 +33,7 @@ export class VisibilityEventHandler implements EventHandler {
 }
 
 export function scopeFor(event: EventEnvelope): RecomputeScope | null {
+  if (event.type === 'rules.ruleset.published') return { all: true };
   const d = event.data as Record<string, unknown>;
   const str = (k: string) => (typeof d[k] === 'string' ? (d[k] as string) : null);
   if (event.type.startsWith('catalog.product.')) {

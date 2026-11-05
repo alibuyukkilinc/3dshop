@@ -13,7 +13,10 @@ export class ApiError extends Error {
 const GENERIC = 'Sunucuya ulaşılamadı. Bağlantınızı kontrol edip tekrar deneyin.';
 
 /** /api altındaki uçları çağırır. Çerez aynı kaynaktan gider; durum değiştiren isteklere Origin tarayıcıca eklenir. */
-export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+export async function api<T>(
+  path: string,
+  init: { method?: string; body?: unknown } = {},
+): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`/api${path}`, {

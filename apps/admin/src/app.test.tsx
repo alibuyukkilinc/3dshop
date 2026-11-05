@@ -16,21 +16,30 @@ describe('yönetim paneli oturum akışı', () => {
     const fetchMock = vi
       .fn()
       .mockReturnValueOnce(respond(401, { error: 'unauthenticated', message: 'Oturum açın.' }))
-      .mockReturnValueOnce(respond(401, { error: 'invalid_credentials', message: 'E-posta veya parola hatalı.' }));
+      .mockReturnValueOnce(
+        respond(401, { error: 'invalid_credentials', message: 'E-posta veya parola hatalı.' }),
+      );
     vi.stubGlobal('fetch', fetchMock);
     render(<App />);
     await screen.findByText('Yönetim paneline giriş');
     fireEvent.change(screen.getByLabelText('E-posta'), { target: { value: 'a@example.com' } });
     fireEvent.change(screen.getByLabelText('Parola'), { target: { value: 'yanlis' } });
     fireEvent.click(screen.getByRole('button', { name: 'Devam' }));
-    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'E-posta veya parola hatalı.');
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'E-posta veya parola hatalı.',
+    );
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/admin/v1/auth/login');
   });
 
   it('2FA bekleyen oturum yenilenince doğrulama ekranı açılır', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockReturnValueOnce(respond(401, { error: 'mfa_required', stage: 'mfa_verify', message: '' })),
+      vi
+        .fn()
+        .mockReturnValueOnce(
+          respond(401, { error: 'mfa_required', stage: 'mfa_verify', message: '' }),
+        ),
     );
     render(<App />);
     await waitFor(() => expect(screen.getByText('Doğrulama kodu')).toBeTruthy());
@@ -41,7 +50,9 @@ describe('yönetim paneli oturum akışı', () => {
       'fetch',
       vi
         .fn()
-        .mockReturnValueOnce(respond(401, { error: 'mfa_required', stage: 'mfa_verify', message: '' }))
+        .mockReturnValueOnce(
+          respond(401, { error: 'mfa_required', stage: 'mfa_verify', message: '' }),
+        )
         .mockReturnValueOnce(respond(401, { error: 'unauthenticated', message: 'Oturum açın.' })),
     );
     render(<App />);
@@ -57,7 +68,14 @@ describe('yönetim paneli oturum akışı', () => {
       'fetch',
       vi
         .fn()
-        .mockReturnValueOnce(respond(200, { id: '1', email: 'a@example.com', display_name: 'Ali', roles: ['platform_admin'] })),
+        .mockReturnValueOnce(
+          respond(200, {
+            id: '1',
+            email: 'a@example.com',
+            display_name: 'Ali',
+            roles: ['platform_admin'],
+          }),
+        ),
     );
     render(<App />);
     expect(await screen.findByText('Hoş geldiniz, Ali')).toBeTruthy();

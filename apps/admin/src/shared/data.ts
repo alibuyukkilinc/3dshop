@@ -31,18 +31,21 @@ export function useResource<T>(path: string | null) {
 export function useAction() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const run = useCallback(async <T,>(fn: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> => {
-    setBusy(true);
-    setError(null);
-    try {
-      return { ok: true, value: await fn() };
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'İşlem başarısız.');
-      return { ok: false };
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  const run = useCallback(
+    async <T>(fn: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> => {
+      setBusy(true);
+      setError(null);
+      try {
+        return { ok: true, value: await fn() };
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : 'İşlem başarısız.');
+        return { ok: false };
+      } finally {
+        setBusy(false);
+      }
+    },
+    [],
+  );
   return { busy, error, run, clearError: () => setError(null) };
 }
 

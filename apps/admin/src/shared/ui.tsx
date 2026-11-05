@@ -65,7 +65,13 @@ export function Field({
   );
 }
 
-export function Alert({ tone = 'danger', children }: { tone?: 'danger' | 'ok'; children: ReactNode }) {
+export function Alert({
+  tone = 'danger',
+  children,
+}: {
+  tone?: 'danger' | 'ok';
+  children: ReactNode;
+}) {
   return (
     <div
       role={tone === 'danger' ? 'alert' : 'status'}
@@ -79,11 +85,21 @@ export function Alert({ tone = 'danger', children }: { tone?: 'danger' | 'ok'; c
   );
 }
 
-export function AuthCard({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+export function AuthCard({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
+}) {
   return (
     <main className="flex min-h-dvh items-center justify-center px-4 py-10">
       <section className="w-full max-w-sm rounded-xl border border-line bg-surface p-6 shadow-sm">
-        <p className="text-xs font-semibold tracking-wide text-accent uppercase">Dijital Ticaret Dünyası</p>
+        <p className="text-xs font-semibold tracking-wide text-accent uppercase">
+          Dijital Ticaret Dünyası
+        </p>
         <h1 className="mt-1 text-xl font-semibold">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
         <div className="mt-6">{children}</div>
@@ -152,7 +168,15 @@ export function SelectField({
   );
 }
 
-export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
+export function PageHeader({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+}) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>

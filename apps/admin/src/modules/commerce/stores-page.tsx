@@ -1,7 +1,9 @@
 import { type FormEvent, useState } from 'react';
 import { api } from '../../shared/api';
 import { useAction, useResource } from '../../shared/data';
+import { ApiError } from '../../shared/api';
 import { Alert, Badge, Button, Field, PageHeader } from '../../shared/ui';
+import { openChangeset } from '../publishing/changesets-page';
 
 interface Store {
   id: string;
@@ -32,7 +34,8 @@ const STORE_STATUS = { draft: 'Taslak', active: 'Yayında', archived: 'Arşiv' }
 export function StoresPage({ canWrite }: { canWrite: boolean }) {
   const companies = useResource<{ items: Company[] }>('/admin/v1/commerce/companies');
   const sources = useResource<{ items: Source[] }>('/admin/v1/integration/sources');
-  const siteCode = (id: string) => sources.data?.items.find((s) => s.id === id)?.code ?? id.slice(0, 8);
+  const siteCode = (id: string) =>
+    sources.data?.items.find((s) => s.id === id)?.code ?? id.slice(0, 8);
 
   return (
     <>
@@ -52,7 +55,12 @@ export function StoresPage({ canWrite }: { canWrite: boolean }) {
             <ul className="mt-4 space-y-3 border-t border-line pt-4">
               {c.stores.map((s) => (
                 <li key={s.id}>
-                  <StoreForm store={s} canWrite={canWrite} onSaved={companies.reload} sites={s.source_site_ids.map(siteCode)} />
+                  <StoreForm
+                    store={s}
+                    canWrite={canWrite}
+                    onSaved={companies.reload}
+                    sites={s.source_site_ids.map(siteCode)}
+                  />
                 </li>
               ))}
             </ul>
@@ -63,7 +71,15 @@ export function StoresPage({ canWrite }: { canWrite: boolean }) {
   );
 }
 
-function CompanyForm({ company, canWrite, onSaved }: { company: Company; canWrite: boolean; onSaved: () => Promise<void> }) {
+function CompanyForm({
+  company,
+  canWrite,
+  onSaved,
+}: {
+  company: Company;
+  canWrite: boolean;
+  onSaved: () => Promise<void>;
+}) {
   const [form, setForm] = useState({
     display_name: company.display_name,
     legal_name: company.legal_name,
@@ -103,8 +119,18 @@ function CompanyForm({ company, canWrite, onSaved }: { company: Company; canWrit
     <form onSubmit={(e) => void submit(e)} className="space-y-3">
       <p className="text-xs font-semibold tracking-wide text-muted uppercase">Firma</p>
       <fieldset disabled={!canWrite} className="grid gap-3 sm:grid-cols-2">
-        <Field label="Görünen ad" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} required />
-        <Field label="Ticari ünvan" value={form.legal_name} onChange={(e) => setForm({ ...form, legal_name: e.target.value })} required />
+        <Field
+          label="Görünen ad"
+          value={form.display_name}
+          onChange={(e) => setForm({ ...form, display_name: e.target.value })}
+          required
+        />
+        <Field
+          label="Ticari ünvan"
+          value={form.legal_name}
+          onChange={(e) => setForm({ ...form, legal_name: e.target.value })}
+          required
+        />
         <Field
           label="Vergi / TC kimlik no"
           inputMode="numeric"
@@ -112,7 +138,12 @@ function CompanyForm({ company, canWrite, onSaved }: { company: Company; canWrit
           onChange={(e) => setForm({ ...form, tax_number: e.target.value })}
           hint="VKN 10, TCKN 11 hane. Bilinmiyorsa boş bırakın."
         />
-        <Field label="Web sitesi" type="url" value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
+        <Field
+          label="Web sitesi"
+          type="url"
+          value={form.website}
+          onChange={(e) => setForm({ ...form, website: e.target.value })}
+        />
       </fieldset>
       {action.error && <Alert>{action.error}</Alert>}
       {saved && !dirty && <Alert tone="ok">Kaydedildi.</Alert>}
@@ -139,6 +170,8 @@ function StoreForm({
   const [name, setName] = useState(store.name);
   const [slug, setSlug] = useState(store.slug);
   const action = useAction();
+  const [publishing, setPublishing] = useState(false);
+  const [pubError, setPubError] = useState<string | null>(null);
   const dirty = name !== store.name || slug !== store.slug;
 
   async function submit(e: FormEvent) {
@@ -156,7 +189,9 @@ function StoreForm({
     <form onSubmit={(e) => void submit(e)} className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs font-semibold tracking-wide text-muted uppercase">Mağaza</p>
-        <Badge tone={store.status === 'active' ? 'ok' : 'muted'}>{STORE_STATUS[store.status]}</Badge>
+        <Badge tone={store.status === 'active' ? 'ok' : 'muted'}>
+          {STORE_STATUS[store.status]}
+        </Badge>
         {sites.map((s) => (
           <Badge key={s} tone="accent">
             kaynak: {s}
@@ -170,15 +205,53 @@ function StoreForm({
           value={slug}
           onChange={(e) => setSlug(e.target.value.toLowerCase())}
           disabled={store.status !== 'draft'}
-          hint={store.status === 'draft' ? 'Kalıcı adres: küçük harf, rakam ve tire.' : 'Yayındaki mağazanın adresi değiştirilemez.'}
+          hint={
+            store.status === 'draft'
+              ? 'Kalıcı adres: küçük harf, rakam ve tire.'
+              : 'Yayındaki mağazanın adresi değiştirilemez.'
+          }
         />
       </fieldset>
       {action.error && <Alert>{action.error}</Alert>}
-      {canWrite && dirty && (
-        <Button type="submit" busy={action.busy}>
-          Mağazayı kaydet
-        </Button>
-      )}
+      <div className="flex flex-wrap gap-2">
+        {canWrite && dirty && (
+          <Button type="submit" busy={action.busy}>
+            Mağazayı kaydet
+          </Button>
+        )}
+        {canWrite && store.status !== 'archived' && (
+          <Button
+            type="button"
+            variant="ghost"
+            busy={publishing}
+            onClick={async () => {
+              setPublishing(true);
+              setPubError(null);
+              try {
+                await openChangeset(
+                  store.status === 'draft'
+                    ? `Mağazayı yayına al: ${store.name}`
+                    : `Mağazayı yayından kaldır: ${store.name}`,
+                  [
+                    {
+                      entity_type: 'store',
+                      entity_id: store.id,
+                      op: store.status === 'draft' ? 'publish' : 'unpublish',
+                    },
+                  ],
+                );
+              } catch (err) {
+                setPubError(err instanceof ApiError ? err.message : 'Değişiklik seti açılamadı.');
+              } finally {
+                setPublishing(false);
+              }
+            }}
+          >
+            {store.status === 'draft' ? 'Yayına al…' : 'Yayından kaldır…'}
+          </Button>
+        )}
+      </div>
+      {pubError && <Alert>{pubError}</Alert>}
     </form>
   );
 }

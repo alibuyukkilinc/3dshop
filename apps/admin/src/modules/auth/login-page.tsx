@@ -21,7 +21,10 @@ export function LoginPage({
     setBusy(true);
     setError(null);
     try {
-      const res = await api<AdminLoginResult>('/admin/v1/auth/login', { method: 'POST', body: { email, password } });
+      const res = await api<AdminLoginResult>('/admin/v1/auth/login', {
+        method: 'POST',
+        body: { email, password },
+      });
       onStage(res.stage);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Giriş yapılamadı.');

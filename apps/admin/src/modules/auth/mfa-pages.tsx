@@ -19,7 +19,9 @@ function useVerify(onVerified: (r: MfaVerifyResult) => void, onExpired: () => vo
     setBusy(true);
     setError(null);
     try {
-      onVerified(await api<MfaVerifyResult>('/admin/v1/auth/mfa/verify', { method: 'POST', body: { code } }));
+      onVerified(
+        await api<MfaVerifyResult>('/admin/v1/auth/mfa/verify', { method: 'POST', body: { code } }),
+      );
     } catch (err) {
       if (isSessionExpired(err)) return onExpired();
       setError(err instanceof ApiError ? err.message : 'Doğrulama yapılamadı.');
@@ -74,7 +76,9 @@ export function MfaSetupPage({ onVerified, onExpired }: MfaPageProps) {
             dangerouslySetInnerHTML={{ __html: qr }}
           />
           <details className="text-sm">
-            <summary className="cursor-pointer text-muted">QR okutamıyorum, kodu elle gireceğim</summary>
+            <summary className="cursor-pointer text-muted">
+              QR okutamıyorum, kodu elle gireceğim
+            </summary>
             <code className="mt-2 block rounded bg-surface-2 p-2 font-mono text-xs break-all select-all">
               {setup.secret}
             </code>
@@ -120,14 +124,23 @@ export function MfaVerifyPage({ onVerified, onExpired }: MfaPageProps) {
 }
 
 /** Kurtarma kodları yalnız bir kez gösterilir. */
-export function RecoveryCodesPage({ codes, onContinue }: { codes: string[]; onContinue: () => void }) {
+export function RecoveryCodesPage({
+  codes,
+  onContinue,
+}: {
+  codes: string[];
+  onContinue: () => void;
+}) {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const text = codes.join('\n');
 
   function download() {
     const url = URL.createObjectURL(new Blob([`${text}\n`], { type: 'text/plain' }));
-    const a = Object.assign(document.createElement('a'), { href: url, download: 'kurtarma-kodlari.txt' });
+    const a = Object.assign(document.createElement('a'), {
+      href: url,
+      download: 'kurtarma-kodlari.txt',
+    });
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -151,7 +164,11 @@ export function RecoveryCodesPage({ codes, onContinue }: { codes: string[]; onCo
             setCopied(true);
           }}
         >
-          {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
+          {copied ? (
+            <Check className="size-4" aria-hidden />
+          ) : (
+            <Copy className="size-4" aria-hidden />
+          )}
           {copied ? 'Kopyalandı' : 'Kopyala'}
         </Button>
         <Button variant="ghost" type="button" onClick={download}>
@@ -160,7 +177,12 @@ export function RecoveryCodesPage({ codes, onContinue }: { codes: string[]; onCo
         </Button>
       </div>
       <label className="mt-4 flex items-start gap-2 text-sm">
-        <input type="checkbox" className="mt-0.5" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={saved}
+          onChange={(e) => setSaved(e.target.checked)}
+        />
         Kodları güvenli bir yere kaydettim.
       </label>
       <Button className="mt-4 w-full" disabled={!saved} onClick={onContinue}>

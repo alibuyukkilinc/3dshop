@@ -33,7 +33,9 @@ describe('Kaynak siteler sayfası', () => {
   it('durumu ve sayıları gösterir; token formu PUT gönderir ve token ekranda kalmaz', async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (init?.method === 'PUT') return json(null, 204);
-      return json(url.includes('/runs') ? { items: [] } : { items: [source], delta_interval_minutes: 5 });
+      return json(
+        url.includes('/runs') ? { items: [] } : { items: [source], delta_interval_minutes: 5 },
+      );
     });
     vi.stubGlobal('fetch', fetchMock);
     render(<SourcesPage canWrite />);
@@ -54,7 +56,10 @@ describe('Kaynak siteler sayfası', () => {
   });
 
   it('salt okuyucu yazma düğmelerini görmez', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => json({ items: [source], delta_interval_minutes: 5 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => json({ items: [source], delta_interval_minutes: 5 })),
+    );
     render(<SourcesPage canWrite={false} />);
     await screen.findByText('esensolarmarket');
     expect(screen.queryByTitle('Token gir')).toBeNull();
@@ -74,7 +79,12 @@ describe('kategori ağacı düzleştirme', () => {
       version: 1,
       product_count: 0,
     });
-    const flat = flattenTree([c('b', null, 'Eğitim', 2), c('a', null, 'Enerji', 1), c('a1', 'a', 'İnverterler'), c('a2', 'a', 'Aküler')]);
+    const flat = flattenTree([
+      c('b', null, 'Eğitim', 2),
+      c('a', null, 'Enerji', 1),
+      c('a1', 'a', 'İnverterler'),
+      c('a2', 'a', 'Aküler'),
+    ]);
     expect(flat.map((x) => [x.path, x.depth])).toEqual([
       ['Enerji', 0],
       ['Enerji › Aküler', 1],

@@ -1,0 +1,96 @@
+// Modül: modules/publishing. Değişiklik setleri, esnek dört göz, zamanlama, geri alma (K44, yayin dalı).
+// Varlıkların kendisi sahip modüllerdedir; burada yalnız tür + kimlik (K32).
+
+model Changeset {
+  id                 String          @id @db.Uuid
+  title              String
+  description        String?
+  /// draft | in_review | approved | scheduled | published | rejected | cancelled
+  status             String          @default("draft")
+  createdBy          String          @map("created_by") @db.Uuid
+  submittedAt        DateTime?       @map("submitted_at") @db.Timestamptz(3)
+  approvedBy         String?         @map("approved_by") @db.Uuid
+  approvedAt         DateTime?       @map("approved_at") @db.Timestamptz(3)
+  /// Başka aktif onaylayıcı yokken hazırlayanın kendi onayı (K44, K13)
+  selfApproved       Boolean         @default(false) @map("self_approved")
+  selfApprovalReason String?         @map("self_approval_reason")
+  scheduledAt        DateTime?       @map("scheduled_at") @db.Timestamptz(3)
+  publishedAt        DateTime?       @map("published_at") @db.Timestamptz(3)
+  publishedBy        String?         @map("published_by") @db.Uuid
+  /// Bu set bir geri almaysa geri aldığı set
+  rollbackOfId       String?         @map("rollback_of_id") @db.Uuid
+  /// Bu set geri alındıysa geri alan set
+  rolledBackById     String?         @map("rolled_back_by_id") @db.Uuid
+  lastError          String?         @map("last_error")
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version            Int             @default(1)
+  items              ChangesetItem[]
+  approvals          Approval[]
+
+  @@index([status, scheduledAt])
+  @@map("changesets")
+  @@schema("publishing")
+}
+
+model ChangesetItem {
+  id          String    @id @db.Uuid
+  changesetId String    @map("changeset_id") @db.Uuid
+  changeset   Changeset @relation(fields: [changesetId], references: [id], onDelete: Cascade)
+  entityType  String    @map("entity_type")
+  /// create'te yayına kadar boş
+  entityId    String?   @map("entity_id") @db.Uuid
+  op          String
+  /// İstenen durum (bağdaştırıcının biçiminde)
+  payload     Json
+  /// Yayın anındaki önceki canlı durum: geri alma bundan kurulur
+  before      Json?
+  sort        Int       @default(0)
+
+  @@index([changesetId])
+  @@index([entityType, entityId])
+  @@map("changeset_items")
+  @@schema("publishing")
+}
+
+model Approval {
+  id          String    @id @db.Uuid
+  changesetId String    @map("changeset_id") @db.Uuid
+  changeset   Changeset @relation(fields: [changesetId], references: [id], onDelete: Cascade)
+  approverId  String    @map("approver_id") @db.Uuid
+  /// approve | reject
+  decision    String
+  comment     String?
+  at          DateTime  @db.Timestamptz(3)
+
+  @@index([changesetId])
+  @@map("approvals")
+  @@schema("publishing")
+}
+
+/// Canlı işaretçi: bir varlığı en son hangi set yayınladı.
+model Publication {
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id") @db.Uuid
+  changesetId String   @map("changeset_id") @db.Uuid
+  publishedAt DateTime @map("published_at") @db.Timestamptz(3)
+
+  @@id([entityType, entityId])
+  @@map("publications")
+  @@schema("publishing")
+}
+
+model PublicationHistory {
+  id          String   @id @db.Uuid
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id") @db.Uuid
+  changesetId String   @map("changeset_id") @db.Uuid
+  /// publish | rollback
+  action      String
+  at          DateTime @db.Timestamptz(3)
+  by          String   @db.Uuid
+
+  @@index([entityType, entityId, at])
+  @@map("publication_history")
+  @@schema("publishing")
+}

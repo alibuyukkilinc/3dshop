@@ -9,6 +9,7 @@ import { CategoriesPage } from '../catalog/categories-page';
 import { StoresPage } from '../commerce/stores-page';
 import { HomePage } from '../home/home-page';
 import { SourcesPage } from '../integration/sources-page';
+import { ChangesetsPage } from '../publishing/changesets-page';
 import { RulesPage } from '../rules/rules-page';
 
 const NAV = [
@@ -18,6 +19,7 @@ const NAV = [
   ['/categories', 'Kategoriler'],
   ['/brands', 'Markalar'],
   ['/rules', 'Kurallar'],
+  ['/changesets', 'Yayın'],
 ] as const;
 
 /** Oturum açmış yöneticinin çerçevesi: üst menü + hash ile seçilen sayfa. */
@@ -27,7 +29,8 @@ export function AdminShell({ me, onLoggedOut }: { me: AdminMe; onLoggedOut: () =
   const canWrite = me.roles.includes('platform_admin');
 
   let page;
-  switch (route) {
+  const csMatch = /^\/changesets(?:\/([0-9a-f-]{36}))?$/.exec(route);
+  switch (csMatch ? '/changesets' : route) {
     case '/sources':
       page = <SourcesPage canWrite={canWrite} />;
       break;
@@ -41,7 +44,10 @@ export function AdminShell({ me, onLoggedOut }: { me: AdminMe; onLoggedOut: () =
       page = <BrandsPage canWrite={canWrite} />;
       break;
     case '/rules':
-      page = <RulesPage canWrite={canWrite} />;
+      page = <RulesPage canWrite={canWrite} canPrepare={canWrite || me.roles.includes('editor')} />;
+      break;
+    case '/changesets':
+      page = <ChangesetsPage me={me} id={csMatch?.[1] ?? null} />;
       break;
     default:
       page = <HomePage me={me} />;
@@ -71,7 +77,7 @@ export function AdminShell({ me, onLoggedOut }: { me: AdminMe; onLoggedOut: () =
         <nav aria-label="Bölümler" className="mx-auto max-w-6xl overflow-x-auto px-4">
           <ul className="flex gap-1">
             {NAV.map(([href, label]) => {
-              const active = route === href;
+              const active = route === href || (href === '/changesets' && !!csMatch);
               return (
                 <li key={href}>
                   <a
@@ -79,7 +85,9 @@ export function AdminShell({ me, onLoggedOut }: { me: AdminMe; onLoggedOut: () =
                     aria-current={active ? 'page' : undefined}
                     className={cn(
                       'block border-b-2 px-3 py-2 text-sm whitespace-nowrap',
-                      active ? 'border-accent font-medium text-ink' : 'border-transparent text-muted hover:text-ink',
+                      active
+                        ? 'border-accent font-medium text-ink'
+                        : 'border-transparent text-muted hover:text-ink',
                     )}
                   >
                     {label}

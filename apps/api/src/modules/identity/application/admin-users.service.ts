@@ -49,4 +49,19 @@ export class AdminUsersService {
     });
     return { id };
   }
+
+  /** 2FA'sı kurulu, aktif onaylayıcılar (esnek dört göz, K44). */
+  async activeApproverIds(): Promise<string[]> {
+    const rows = await this.prisma.adminUser.findMany({
+      where: { status: 'active', totpEnabledAt: { not: null }, roles: { some: { roleCode: 'approver' } } },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
+  }
+
+  /** Bir yöneticinin rolleri (yayın kısıtları hazırlayana göre denetlenir, K44). */
+  async rolesOf(adminId: string): Promise<string[]> {
+    const rows = await this.prisma.adminUserRole.findMany({ where: { adminUserId: adminId }, select: { roleCode: true } });
+    return rows.map((r) => r.roleCode);
+  }
 }

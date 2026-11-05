@@ -23,7 +23,10 @@ export function HomePage({ me }: { me: AdminMe }) {
       <ul className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {SECTIONS.map(([href, title, hint]) => (
           <li key={href}>
-            <a href={href} className="block h-full rounded-lg border border-line bg-surface p-4 hover:border-accent">
+            <a
+              href={href}
+              className="block h-full rounded-lg border border-line bg-surface p-4 hover:border-accent"
+            >
               <p className="font-medium">{title}</p>
               <p className="mt-1 text-xs text-muted">{hint}</p>
             </a>

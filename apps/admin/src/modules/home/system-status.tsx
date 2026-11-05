@@ -26,8 +26,12 @@ export interface OpsStatus {
   jobs: Job[];
 }
 
-const JOB_NAMES: Record<string, string> = { backup: 'Gece yedeği', restore_test: 'Geri yükleme provası' };
-const fmt = (iso: string) => new Date(iso).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' });
+const JOB_NAMES: Record<string, string> = {
+  backup: 'Gece yedeği',
+  restore_test: 'Geri yükleme provası',
+};
+const fmt = (iso: string) =>
+  new Date(iso).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' });
 
 /** Sistem durumu (F0.7): açık hatalar, ölü mektuplar, yedek ve prova sonuçları. */
 export function SystemStatus({ canResolve }: { canResolve: boolean }) {
@@ -72,11 +76,17 @@ export function SystemStatus({ canResolve }: { canResolve: boolean }) {
         <>
           <ul className="mt-3 grid gap-3 sm:grid-cols-3">
             <Stat label="Açık hata" value={data.open_errors} bad={data.open_errors > 0} />
-            <Stat label="Teslim edilemeyen olay" value={data.dead_letters} bad={data.dead_letters > 0} />
+            <Stat
+              label="Teslim edilemeyen olay"
+              value={data.dead_letters}
+              bad={data.dead_letters > 0}
+            />
             <li className="rounded-lg border border-line bg-surface p-4">
               <p className="text-xs text-muted">Son yedek</p>
               <p className="mt-1 font-medium">
-                {backup ? `${fmt(backup.finished_at)} · ${backup.ok ? 'başarılı' : 'BAŞARISIZ'}` : 'Henüz yok'}
+                {backup
+                  ? `${fmt(backup.finished_at)} · ${backup.ok ? 'başarılı' : 'BAŞARISIZ'}`
+                  : 'Henüz yok'}
               </p>
             </li>
           </ul>
@@ -97,19 +107,27 @@ export function SystemStatus({ canResolve }: { canResolve: boolean }) {
           {data.errors.length > 0 && (
             <ul className="mt-4 divide-y divide-line rounded-lg border border-line bg-surface">
               {data.errors.map((e) => (
-                <li key={e.fingerprint} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between">
+                <li
+                  key={e.fingerprint}
+                  className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between"
+                >
                   <div className="min-w-0">
                     <p className="font-medium break-words">
                       {e.name}: {e.message}
                     </p>
                     <p className="mt-0.5 text-xs text-muted">
                       {e.source}
-                      {e.context?.path ? ` · ${e.context.method ?? ''} ${e.context.path}` : ''} · {e.count} kez · son{' '}
-                      {fmt(e.last_seen_at)}
+                      {e.context?.path
+                        ? ` · ${e.context.method ?? ''} ${e.context.path}`
+                        : ''} · {e.count} kez · son {fmt(e.last_seen_at)}
                     </p>
                   </div>
                   {canResolve && (
-                    <Button variant="ghost" className="shrink-0" onClick={() => void resolve(e.fingerprint)}>
+                    <Button
+                      variant="ghost"
+                      className="shrink-0"
+                      onClick={() => void resolve(e.fingerprint)}
+                    >
                       Çözüldü
                     </Button>
                   )}
