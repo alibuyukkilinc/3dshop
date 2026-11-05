@@ -6,11 +6,13 @@ import { defineConfig } from 'vite';
 // oturum çerezi (Path=/api/admin, SameSite=Strict) çalışır.
 const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:3100';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Sunucuda panel ana sitenin altında yayınlanır: https://staging.firmaxi.com/yonetim/
+  base: command === 'build' ? (process.env.ADMIN_BASE ?? '/yonetim/') : '/',
   plugins: [react(), tailwindcss()],
   server: {
     port: Number(process.env.ADMIN_PORT ?? 5174),
     strictPort: true,
     proxy: { '/api': apiTarget },
   },
-});
+}));
