@@ -171,6 +171,8 @@ export class SourceSitesService {
       baseUrl: s.baseUrl,
       status: s.status,
       hasToken: s.credentialsEnc !== null,
+      hasWebhookSecret: s.webhookSecretEnc !== null,
+      lastWebhookAt: s.lastWebhookAt,
       watermark: s.watermark,
       lastFullSyncAt: s.lastFullSyncAt,
       lastDeltaSyncAt: s.lastDeltaSyncAt,

@@ -56,7 +56,7 @@ const MAX_DRIFT_IDS = 100;
 /** Bir tikte yeniden çekilecek en çok süresi dolmuş fiyat */
 const EXPIRY_BATCH = 50;
 
-type SiteRow = NonNullable<Awaited<ReturnType<PrismaService['sourceSite']['findUnique']>>>;
+export type SiteRow = NonNullable<Awaited<ReturnType<PrismaService['sourceSite']['findUnique']>>>;
 type Outcome = 'created' | 'updated' | 'unchanged' | 'invalid';
 
 /**
@@ -194,16 +194,8 @@ export class SourceSyncService {
     for (const d of due) {
       const site = sites.get(d.sourceSiteId);
       if (!site?.credentialsEnc || site.status !== 'active' || isCircuitOpen(site.circuitOpenUntil, now)) continue;
-      const id = Number(d.externalId);
-      if (!Number.isInteger(id) || id < 1) continue;
       try {
-        // Export'ta tekil uç yok: imleç "bu kimlikten büyük" demek, id-1 ve limit 1 tam o ürünü getirir
-        const page = await this.client(site).exportPage({ cursor: id - 1, limit: 1 });
-        const item = page.items[0];
-        if (item && (item as { product_id?: unknown }).product_id === id) {
-          const r = await this.processItem(site, item);
-          if (r.outcome === 'created' || r.outcome === 'updated') changed++;
-        }
+        if ((await this.refreshOne(site, d.externalId)) === 'changed') changed++;
         // Ürün değişmese ya da kaynakta artık olmasa da (arşiv: gece uzlaştırması işler) tekrar sorulmaz
         await this.prisma.$transaction((tx) => this.expiry.markChecked(tx, d.productId, now));
         checked++;
@@ -213,6 +205,32 @@ export class SourceSyncService {
     }
     if (checked) this.logger.log(`Süresi dolan fiyat: ${checked} ürün yeniden çekildi, ${changed} değişti`);
     return { checked, changed };
+  }
+
+  /**
+   * Tek ürünü kaynaktan yeniden çeker (webhook ve indirim bitişi). Export'ta tekil uç yok: imleç "bu kimlikten
+   * büyük" demek, id-1 ve limit 1 tam o ürünü getirir. Kaynakta yoksa (silinmiş/arşiv) 'missing'.
+   */
+  async refreshOne(site: SiteRow, externalId: string): Promise<'changed' | 'unchanged' | 'missing' | 'invalid'> {
+    const id = Number(externalId);
+    if (!Number.isInteger(id) || id < 1) return 'invalid';
+    const page = await this.client(site).exportPage({ cursor: id - 1, limit: 1 });
+    const item = page.items[0];
+    if (!item || (item as { product_id?: unknown }).product_id !== id) return 'missing';
+    const r = await this.processItem(site, item);
+    if (r.outcome === 'invalid') return 'invalid';
+    return r.outcome === 'unchanged' ? 'unchanged' : 'changed';
+  }
+
+  /** Kaynakta artık olmayan tek ürünü "kaynakta yok" işaretler (product.deleted webhook'u). */
+  async markRemovedOne(site: SiteRow, externalId: string): Promise<boolean> {
+    const key = { sourceSiteId_entity_externalId: { sourceSiteId: site.id, entity: 'product', externalId } };
+    if (!(await this.prisma.sourceRecord.findUnique({ where: key }))) return false;
+    return this.prisma.$transaction(async (tx) => {
+      const marked = await this.catalog.markRemoved(tx, site.id, externalId, adapterActor(site.code));
+      await tx.sourceRecord.update({ where: key, data: { deletedAtSource: new Date() } });
+      return marked;
+    });
   }
 
   private client(site: SiteRow): ExportSource {

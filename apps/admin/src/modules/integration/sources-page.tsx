@@ -30,6 +30,7 @@ export interface Source {
   circuit_open_until: string | null;
   last_error: string | null;
   catalog: { total: number; active: number; priced: number; unmapped_categories: number };
+  webhook: { has_secret: boolean; last_received_at: string | null; pending: number; failed: number };
 }
 interface Run {
   id: string;
@@ -209,7 +210,7 @@ export function SourcesPage({ canWrite }: { canWrite: boolean }) {
                     {expanded && (
                       <tr>
                         <td colSpan={canWrite ? 8 : 7} className="bg-surface-2 p-4">
-                          <SourceDetail source={s} />
+                          <SourceDetail source={s} canWrite={canWrite} />
                         </td>
                       </tr>
                     )}
@@ -267,7 +268,7 @@ const RUN_STATUS: Record<Run['status'], [string, Tone]> = {
   running: ['Sürüyor', 'accent'],
 };
 
-function SourceDetail({ source }: { source: Source }) {
+function SourceDetail({ source, canWrite }: { source: Source; canWrite: boolean }) {
   const { data, error } = useResource<{ items: Run[] }>(`/admin/v1/integration/sources/${source.code}/runs?limit=15`);
   return (
     <div className="space-y-3">
@@ -322,6 +323,85 @@ function SourceDetail({ source }: { source: Source }) {
             ))}
           </tbody>
         </table>
+      )}
+      <WebhookPanel source={source} canWrite={canWrite} />
+    </div>
+  );
+}
+
+interface WebhookEvent {
+  id: string;
+  event_id: string;
+  event: string;
+  status: 'pending' | 'processed' | 'failed' | 'deferred';
+  attempts: number;
+  received_at: string;
+  error: string | null;
+  product_count: number;
+}
+const HOOK_STATUS: Record<WebhookEvent['status'], [string, Tone]> = {
+  processed: ['İşlendi', 'ok'],
+  pending: ['Bekliyor', 'accent'],
+  failed: ['Başarısız', 'danger'],
+  deferred: ['Analitikte işlenecek', 'muted'],
+};
+
+/** Gelen webhook'lar (F1.4): kaynak site olay yayını açınca değişiklikler saniyeler içinde gelir. */
+function WebhookPanel({ source, canWrite }: { source: Source; canWrite: boolean }) {
+  const events = useResource<{ items: WebhookEvent[] }>(`/admin/v1/integration/sources/${source.code}/webhooks?limit=10`);
+  const action = useAction();
+  const [issued, setIssued] = useState<{ secret: string; url: string } | null>(null);
+
+  async function rotate() {
+    if (source.webhook.has_secret && !window.confirm('Yeni sır üretilince eskisi hemen geçersiz olur. Kaynak sitedeki ayar da güncellenmeli. Devam edilsin mi?')) return;
+    const r = await action.run(() =>
+      api<{ secret: string; url_path: string }>(`/admin/v1/integration/sources/${source.code}/webhook-secret`, { method: 'POST' }),
+    );
+    if (r.ok) setIssued({ secret: r.value.secret, url: `${window.location.origin}${r.value.url_path}` });
+  }
+
+  return (
+    <div className="space-y-2 border-t border-line pt-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs font-semibold tracking-wide text-muted uppercase">Webhook</p>
+        <Badge tone={source.webhook.has_secret ? 'ok' : 'muted'}>{source.webhook.has_secret ? 'sır tanımlı' : 'sır yok'}</Badge>
+        <span className="text-xs text-muted">son olay: {fmtAgo(source.webhook.last_received_at)}</span>
+        {source.webhook.failed > 0 && <Badge tone="danger">{source.webhook.failed} başarısız</Badge>}
+        {canWrite && (
+          <Button variant="ghost" className="ml-auto h-8 px-2 text-xs" busy={action.busy} onClick={() => void rotate()}>
+            {source.webhook.has_secret ? 'Sırrı yenile' : 'Sır üret'}
+          </Button>
+        )}
+      </div>
+      {action.error && <Alert>{action.error}</Alert>}
+      {issued && (
+        <div className="rounded-md border border-warn bg-warn-bg p-3 text-xs text-ink">
+          <p className="font-medium">Bu sır yalnız şimdi gösteriliyor. Kaynak sitenin webhook ayarına girin:</p>
+          <dl className="mt-2 grid gap-1 font-mono break-all">
+            <div>
+              <dt className="inline text-muted">Adres: </dt>
+              <dd className="inline">{issued.url}</dd>
+            </div>
+            <div>
+              <dt className="inline text-muted">Sır: </dt>
+              <dd className="inline">{issued.secret}</dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-muted">İmza: X-DTD-Signature = HMAC-SHA256(sır, X-DTD-Timestamp + "." + gövde), onaltılık.</p>
+        </div>
+      )}
+      {events.data && events.data.items.length > 0 && (
+        <ul className="space-y-1 text-xs">
+          {events.data.items.map((e) => (
+            <li key={e.id} className="flex flex-wrap items-center gap-2">
+              <span className="text-muted">{fmtDate(e.received_at)}</span>
+              <span className="font-mono">{e.event}</span>
+              {e.product_count > 0 && <span className="text-muted">{e.product_count} ürün</span>}
+              <Badge tone={HOOK_STATUS[e.status][1]}>{HOOK_STATUS[e.status][0]}</Badge>
+              {e.error && <span className="text-danger">{e.error}</span>}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

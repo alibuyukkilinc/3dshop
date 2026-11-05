@@ -26,6 +26,7 @@ const source = {
   circuit_open_until: null,
   last_error: null,
   catalog: { total: 347, active: 151, priced: 347, unmapped_categories: 12 },
+  webhook: { has_secret: false, last_received_at: null, pending: 0, failed: 0 },
 };
 
 describe('Kaynak siteler sayfası', () => {

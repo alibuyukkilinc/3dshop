@@ -35,6 +35,8 @@ model SourceSite {
   lastFullSyncAt      DateTime?      @map("last_full_sync_at") @db.Timestamptz(3)
   lastDeltaSyncAt     DateTime?      @map("last_delta_sync_at") @db.Timestamptz(3)
   lastWebhookAt       DateTime?      @map("last_webhook_at") @db.Timestamptz(3)
+  /// Gelen webhook imza sırrı (AES-256-GCM). Yönetim panelinde bir kez gösterilir, sonra yalnız değiştirilir.
+  webhookSecretEnc    String?        @map("webhook_secret_enc")
   /// Devre kesici: art arda başarısız çalışma sayısı ve bekleme bitişi
   consecutiveFailures Int            @default(0) @map("consecutive_failures")
   circuitOpenUntil    DateTime?      @map("circuit_open_until") @db.Timestamptz(3)
@@ -44,6 +46,7 @@ model SourceSite {
   version             Int            @default(1)
   records             SourceRecord[]
   runs                SyncRun[]
+  webhooks            WebhookInbox[]
 
   @@map("source_sites")
   @@schema("integration")
@@ -83,5 +86,30 @@ model SyncRun {
 
   @@index([sourceSiteId, startedAt(sort: Desc)])
   @@map("sync_runs")
+  @@schema("integration")
+}
+
+/**
+ * Gelen webhook kutusu (K42, B2). Webhook yalnız tetikleyicidir: ürün export'tan tekil yeniden çekilir.
+ * (site, event_id) tekildir: aynı olay ikinci kez gelirse yok sayılır.
+ */
+model WebhookInbox {
+  id           String     @id @db.Uuid
+  sourceSiteId String     @map("source_site_id") @db.Uuid
+  site         SourceSite @relation(fields: [sourceSiteId], references: [id])
+  eventId      String     @map("event_id")
+  /// product.changed | price.changed | stock.changed | option_stock.changed | product.deleted | order.created
+  event        String
+  payload      Json
+  /// pending | processed | failed | deferred (order.created: analitik modülü F5'te işler)
+  status       String     @default("pending")
+  attempts     Int        @default(0)
+  receivedAt   DateTime   @map("received_at") @db.Timestamptz(3)
+  processedAt  DateTime?  @map("processed_at") @db.Timestamptz(3)
+  error        String?
+
+  @@unique([sourceSiteId, eventId])
+  @@index([status, receivedAt])
+  @@map("webhook_inbox")
   @@schema("integration")
 }

@@ -16,7 +16,7 @@ export async function createTestApp(db: TestDatabase): Promise<INestApplication>
   process.env.SECRETS_KEY ??= Buffer.alloc(32, 7).toString('base64');
   resetEnvCache();
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: ['error'] });
+  const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: ['error'], rawBody: true });
   configureHttp(app, loadEnv());
   await app.init();
   return app;

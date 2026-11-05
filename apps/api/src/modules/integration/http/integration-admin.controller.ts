@@ -5,6 +5,7 @@ import { adminContext, parseInput } from '../../../infra/http/admin-request.js';
 import { CatalogMappingService } from '../../catalog/public/index.js';
 import { AdminGuard, CurrentAdminSession, RequireRoles, type ResolvedSession } from '../../identity/public/index.js';
 import { SourceSitesService } from '../application/source-sites.service.js';
+import { WebhooksService } from '../application/webhooks.service.js';
 import { DELTA_INTERVAL_MS } from '../application/source-sync.service.js';
 import { isCircuitOpen } from '../domain/circuit.js';
 import { lastReconcileAt } from '../domain/schedule.js';
@@ -27,12 +28,13 @@ export class IntegrationAdminController {
   constructor(
     private readonly sites: SourceSitesService,
     private readonly catalog: CatalogMappingService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   @Get('sources')
   async sources() {
     const now = new Date();
-    const [sites, counts] = await Promise.all([this.sites.list(), this.catalog.siteCounts()]);
+    const [sites, counts, hooks] = await Promise.all([this.sites.list(), this.catalog.siteCounts(), this.webhooks.countsBySite()]);
     const reconcileAt = lastReconcileAt(now);
     return {
       delta_interval_minutes: DELTA_INTERVAL_MS / 60_000,
@@ -62,6 +64,11 @@ export class IntegrationAdminController {
           last_error: s.lastError,
           last_run: s.lastRun,
           catalog: counts[s.id] ?? { total: 0, active: 0, priced: 0, unmapped_categories: 0 },
+          webhook: {
+            has_secret: s.hasWebhookSecret,
+            last_received_at: s.lastWebhookAt,
+            ...(hooks[s.id] ?? { pending: 0, failed: 0 }),
+          },
         };
       }),
     };
@@ -71,6 +78,19 @@ export class IntegrationAdminController {
   async runs(@Param('code') code: string, @Query() query: unknown) {
     const { limit } = parseInput(RunsQuery, query);
     return { items: await this.sites.runs(parseInput(Code, code), limit) };
+  }
+
+  @Get('sources/:code/webhooks')
+  async recentWebhooks(@Param('code') code: string, @Query() query: unknown) {
+    const { limit } = parseInput(RunsQuery, query);
+    return { items: await this.webhooks.recent(parseInput(Code, code), limit) };
+  }
+
+  /** Yeni webhook sırrı: düz hâli yalnız bu yanıtta döner; eskisi hemen geçersiz olur. */
+  @Post('sources/:code/webhook-secret')
+  @RequireRoles('platform_admin')
+  rotateWebhookSecret(@Param('code') code: string, @CurrentAdminSession() s: ResolvedSession, @Req() req: Request) {
+    return this.webhooks.rotateSecret(parseInput(Code, code), adminContext(s.admin.id, req));
   }
 
   @Put('sources/:code/token')

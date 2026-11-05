@@ -8,7 +8,10 @@ import { ErrorReporter } from './modules/ops/public/index.js';
 
 async function bootstrap() {
   const env = loadEnv();
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    // Webhook imzası ham gövde üzerinden doğrulanır (F1.4)
+    rawBody: true,
+  });
   configureHttp(app, env);
   app.enableShutdownHooks();
   const reporter = app.get(ErrorReporter);

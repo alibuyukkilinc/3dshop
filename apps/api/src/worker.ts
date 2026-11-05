@@ -11,6 +11,7 @@ import {
   SourceSitesService,
   SourceSyncService,
   SyncBusyError,
+  WebhooksService,
 } from './modules/integration/public/index.js';
 import { AlertMailer, AlertService, ErrorReporter, OpsWorkerModule } from './modules/ops/public/index.js';
 import { OutboxRelay, PlatformModule } from './modules/platform/public/index.js';
@@ -27,6 +28,7 @@ const OUTBOX_POLL_MS = 1_000;
 const HOURLY_MS = 3_600_000;
 /** Kaynak eşitleme zamanlayıcısı: her dakika zamanı gelen siteler sırayla eşitlenir (K42) */
 const SYNC_TICK_MS = 60_000;
+const WEBHOOK_TICK_MS = 10_000;
 
 async function bootstrap() {
   loadEnv();
@@ -114,11 +116,27 @@ Site ${site.circuitOpenUntil?.toISOString() ?? '-'} zamanına kadar bekletiliyor
   const syncTimer = loadEnv().INTEGRATION_SYNC_ENABLED ? setInterval(() => void syncTick(), SYNC_TICK_MS) : null;
   if (syncTimer) void syncTick();
 
+  // Gelen webhook kutusu (F1.4): eşitlemeden sık, böylece kaynaktaki değişiklik saniyeler içinde aynaya geçer
+  const webhooks = app.get(WebhooksService);
+  let hooking = false;
+  const webhookTimer = setInterval(async () => {
+    if (hooking || stopping) return;
+    hooking = true;
+    try {
+      await webhooks.processPending();
+    } catch (e) {
+      await reporter.report(e, 'job', { job: 'webhook_inbox' });
+    } finally {
+      hooking = false;
+    }
+  }, WEBHOOK_TICK_MS);
+
   const stop = () => {
     stopping = true;
     clearInterval(maintenanceTimer);
     clearInterval(nightly);
     if (syncTimer) clearInterval(syncTimer);
+    clearInterval(webhookTimer);
   };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
