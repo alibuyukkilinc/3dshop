@@ -157,7 +157,8 @@ export class RulePublishable implements Publishable, OnModuleInit {
     if (item.op === 'create' || before === null) return { ...base, op: 'archive', payload: {} };
     if (item.op === 'archive') return { ...base, op: 'activate', payload: {} };
     if (item.op === 'activate') return { ...base, op: 'archive', payload: {} };
-    const { status: _status, ...def } = before;
+    // snapshot'taki status kural tanımının parçası değil; geri alma yalnız tanımı geri yazar
+    const def = Object.fromEntries(Object.entries(before).filter(([k]) => k !== 'status'));
     return { ...base, op: 'update', payload: def };
   }
 
