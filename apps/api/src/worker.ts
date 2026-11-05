@@ -15,13 +15,14 @@ import {
 } from './modules/integration/public/index.js';
 import { AlertMailer, AlertService, ErrorReporter, OpsWorkerModule } from './modules/ops/public/index.js';
 import { OutboxRelay, PlatformModule } from './modules/platform/public/index.js';
+import { RulesModule, VisibilityEventHandler, VisibilityService } from './modules/rules/public/index.js';
 
 /**
  * Worker (pm2: dtd-worker). Aynı modülleri API'den ayrı bir süreçte çalıştırır: outbox teslimi, zamanlanmış
  * işler. Kuyruk (Redis + BullMQ, K34) F0.6'da sunucuya Redis kurulunca eklenir; o zamana kadar outbox
  * yoklamayla teslim edilir.
  */
-@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule, IntegrationModule] })
+@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule, IntegrationModule, RulesModule] })
 class WorkerModule {}
 
 const OUTBOX_POLL_MS = 1_000;
@@ -41,6 +42,9 @@ async function bootstrap() {
   const reporter = app.get(ErrorReporter);
   const alerts = app.get(AlertService);
   relay.register(app.get(AlertMailer));
+  // Görünürlük: katalog/ticari olaylarla artımlı yeniden hesap (K43)
+  relay.register(app.get(VisibilityEventHandler));
+  const visibility = app.get(VisibilityService);
   process.on('unhandledRejection', (reason) => void reporter.report(reason, 'worker', { kind: 'unhandledRejection' }));
   let stopping = false;
 
@@ -59,6 +63,11 @@ async function bootstrap() {
     }
   };
   await maintenance();
+  // Görünürlük tam hesabı: açılışta ve saatte bir (kural geçerlilik sınırları, kaçan olaylar). Gece fark raporu
+  // ayrıca gerekmez: tam hesap değişen her hedef için rules.visibility.changed üretir.
+  const fullVisibility = () => visibility.recompute({ all: true }).catch((e) => reporter.report(e, 'job', { job: 'visibility_full' }));
+  void fullVisibility();
+  const visibilityTimer = setInterval(() => void fullVisibility(), HOURLY_MS);
   const maintenanceTimer = setInterval(
     () => void maintenance().catch((e) => reporter.report(e, 'job', { job: 'audit_partitions' })),
     HOURLY_MS,
@@ -137,6 +146,7 @@ Site ${site.circuitOpenUntil?.toISOString() ?? '-'} zamanına kadar bekletiliyor
     clearInterval(nightly);
     if (syncTimer) clearInterval(syncTimer);
     clearInterval(webhookTimer);
+    clearInterval(visibilityTimer);
   };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);

@@ -20,6 +20,7 @@ const CategoryPatchSchema = z.object({
   sort: z.number().int().min(0).max(10_000).optional(),
   status: z.enum(['active', 'archived']).optional(),
 });
+const ProductSearchSchema = z.object({ q: z.string().max(100).default(''), limit: z.coerce.number().int().min(1).max(50).default(20) });
 const ListFilterSchema = z.object({
   source_site_id: Uuid.optional(),
   unmapped: z
@@ -62,6 +63,12 @@ export class CatalogAdminController {
     @Req() req: Request,
   ) {
     return this.mapping.updateCategory(id, parseInput(CategoryPatchSchema, body), adminContext(s.admin.id, req));
+  }
+
+  @Get('products')
+  async products(@Query() query: unknown) {
+    const { q, limit } = parseInput(ProductSearchSchema, query);
+    return { items: await this.mapping.searchProducts(q, limit) };
   }
 
   @Get('source-categories')

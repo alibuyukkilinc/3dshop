@@ -1,0 +1,94 @@
+// Modül: modules/rules. Görünürlük ve kural motoru (A5, K43). Kurallar changeset ile yayınlanır (F2.2, K44);
+// hedef kimlikleri başka modüllerdedir: yalnız kimlik (K32). Cortex: kural-motoru.
+
+model Rule {
+  id              String        @id @db.Uuid
+  code            String        @unique
+  name            String
+  /// mandatory_block | exception | normal | default
+  layer           String
+  /// allow | deny | boost | demote
+  effect          String
+  effectParams    Json          @default("{}") @map("effect_params")
+  /// Koşul DSL'i (JSON); null = koşulsuz
+  condition       Json?
+  priority        Int           @default(0)
+  /// Yalnız exception: ezdiği kural (mandatory_block olamaz)
+  overridesRuleId String?       @map("overrides_rule_id") @db.Uuid
+  /// mandatory_block için zorunlu: dilekçe / karar / KVKK talep no
+  legalRef        String?       @map("legal_ref")
+  reason          String?
+  validFrom       DateTime?     @map("valid_from") @db.Timestamptz(3)
+  validTo         DateTime?     @map("valid_to") @db.Timestamptz(3)
+  /// draft | active | archived
+  status          String        @default("draft")
+  /// Göçle gelen temel kural: silinemez, koşulu panelden değişmez
+  system          Boolean       @default(false)
+  createdBy       String?       @map("created_by")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version         Int           @default(1)
+  targets         RuleTarget[]
+  channels        RuleChannel[]
+
+  @@index([status, layer])
+  @@map("rules")
+  @@schema("rules")
+}
+
+model RuleTarget {
+  id         String  @id @db.Uuid
+  ruleId     String  @map("rule_id") @db.Uuid
+  rule       Rule    @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  /// world | region | company | brand | store | category | product | variant | asset | place
+  targetType String  @map("target_type")
+  /// null: bu türün tamamı
+  targetId   String? @map("target_id") @db.Uuid
+  include    Boolean @default(true)
+
+  @@index([ruleId])
+  @@map("rule_targets")
+  @@schema("rules")
+}
+
+model RuleChannel {
+  ruleId  String @map("rule_id") @db.Uuid
+  rule    Rule   @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  /// 3d | 2d | search | ai | seo | ads | campaign
+  channel String
+
+  @@id([ruleId, channel])
+  @@map("rule_channels")
+  @@schema("rules")
+}
+
+/// Hesaplanmış görünürlük: kanal × hedef. Okuma yolu (vitrin, arama, paket) yalnız buna bakar.
+model VisibilityResolved {
+  targetType      String   @map("target_type")
+  targetId        String   @map("target_id") @db.Uuid
+  channel         String
+  visible         Boolean
+  boost           Decimal  @default(1) @db.Decimal(8, 3)
+  layer           String?
+  decidedByRuleId String?  @map("decided_by_rule_id") @db.Uuid
+  /// Değerlendirme adımları (açıklama ekranı)
+  explanation     Json
+  rulesetVersion  Int      @map("ruleset_version")
+  computedAt      DateTime @map("computed_at") @db.Timestamptz(3)
+
+  @@id([targetType, targetId, channel])
+  @@index([channel, targetType, visible])
+  @@map("visibility_resolved")
+  @@schema("rules")
+}
+
+/// Her kural yayını yeni bir kural seti sürümüdür (K44); sonuçlar hangi sürümle hesaplandığını taşır.
+model RulesetVersion {
+  number      Int      @id
+  changesetId String?  @map("changeset_id") @db.Uuid
+  note        String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("ruleset_versions")
+  @@schema("rules")
+}

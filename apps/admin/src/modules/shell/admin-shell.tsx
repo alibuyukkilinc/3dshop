@@ -9,6 +9,7 @@ import { CategoriesPage } from '../catalog/categories-page';
 import { StoresPage } from '../commerce/stores-page';
 import { HomePage } from '../home/home-page';
 import { SourcesPage } from '../integration/sources-page';
+import { RulesPage } from '../rules/rules-page';
 
 const NAV = [
   ['/', 'Genel'],
@@ -16,6 +17,7 @@ const NAV = [
   ['/stores', 'Firmalar ve mağazalar'],
   ['/categories', 'Kategoriler'],
   ['/brands', 'Markalar'],
+  ['/rules', 'Kurallar'],
 ] as const;
 
 /** Oturum açmış yöneticinin çerçevesi: üst menü + hash ile seçilen sayfa. */
@@ -37,6 +39,9 @@ export function AdminShell({ me, onLoggedOut }: { me: AdminMe; onLoggedOut: () =
       break;
     case '/brands':
       page = <BrandsPage canWrite={canWrite} />;
+      break;
+    case '/rules':
+      page = <RulesPage canWrite={canWrite} />;
       break;
     default:
       page = <HomePage me={me} />;

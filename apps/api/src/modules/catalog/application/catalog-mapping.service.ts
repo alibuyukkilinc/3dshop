@@ -247,6 +247,36 @@ export class CatalogMappingService {
     });
   }
 
+  // ---------------------------------------------------------------- Ürün arama (yönetim)
+
+  /** Yönetim için ürün bulma: ad, SKU ya da kaynak kimliği. Görünürlükten bağımsız (yönetici her şeyi görür). */
+  async searchProducts(q: string, limit: number) {
+    const term = q.trim();
+    const rows = await this.prisma.catalogProduct.findMany({
+      where: term
+        ? {
+            OR: [
+              { externalId: term },
+              { sku: { contains: term, mode: 'insensitive' } },
+              { i18n: { some: { name: { contains: term, mode: 'insensitive' } } } },
+            ],
+          }
+        : {},
+      orderBy: { syncedAt: 'desc' },
+      take: limit,
+      select: { id: true, externalId: true, sku: true, status: true, storeId: true, sourceSiteId: true, i18n: { where: { locale: 'tr' }, select: { name: true } } },
+    });
+    return rows.map((p) => ({
+      id: p.id,
+      external_id: p.externalId,
+      sku: p.sku,
+      status: p.status,
+      store_id: p.storeId,
+      source_site_id: p.sourceSiteId,
+      name: p.i18n[0]?.name ?? `#${p.externalId}`,
+    }));
+  }
+
   // ---------------------------------------------------------------- İzleme
 
   /** Kaynak site başına ayna sayıları (eşitleme izleme ekranı). */

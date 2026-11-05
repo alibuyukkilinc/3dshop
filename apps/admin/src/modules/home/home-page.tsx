@@ -6,10 +6,10 @@ const SECTIONS = [
   ['#/stores', 'Firmalar ve mağazalar', 'Ünvan, vergi no, mağaza adresi'],
   ['#/categories', 'Kategoriler', 'Platform ağacı ve kaynak kategori eşleme'],
   ['#/brands', 'Markalar', 'Marka listesi ve üretici adı eşleme'],
+  ['#/rules', 'Görünürlük kuralları', 'Kurallar ve "neden görünmüyor?"'],
 ] as const;
 
 const UPCOMING = [
-  ['Görünürlük kuralları', 'F2 · kanal bazlı kurallar ve açıklama'],
   ['Yayın ve onay', 'F2 · değişiklik setleri, esnek dört göz'],
   ['Şehir editörü', 'F3 · bölge, yuva, portal'],
   ['3D varlıklar', 'F3 · kütüphane, lisans, LOD'],
