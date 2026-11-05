@@ -38,7 +38,8 @@ for ext in postgis vector pg_trgm unaccent ltree citext; do
   sudo -u postgres psql -qd "$TMPDB" -c "CREATE EXTENSION IF NOT EXISTS $ext" >/dev/null
 done
 ERR=$(mktemp)
-if ! sudo -u postgres pg_restore --no-owner --no-acl --dbname="$TMPDB" "$LATEST" 2>"$ERR"; then
+# postgres kullanıcısı /srv/dtd/backups'ı okuyamaz (750 dtd): dosyayı root açar, pg_restore girişten okur
+if ! sudo -u postgres pg_restore --no-owner --no-acl --dbname="$TMPDB" <"$LATEST" 2>"$ERR"; then
   # Önceden açılan eklentilerin "already exists" uyarıları zararsızdır; başka hata varsa prova başarısız
   REAL=$(grep -iE "error" "$ERR" | grep -viE "already exists|errors ignored on restore" | head -1 || true)
   [[ -z "$REAL" ]] || { rm -f "$ERR"; fail "pg_restore hata verdi: ${REAL//\"/}"; }

@@ -59,8 +59,11 @@ if [[ "$(date +%u)" == "7" ]]; then
 fi
 
 STAGE="yerel saklama"
-ls -1t "$DIR"/nightly-*.dump 2>/dev/null | tail -n +$((KEEP_NIGHTLY + 1)) | xargs -r rm --
-ls -1t "$DIR"/weekly-*.dump 2>/dev/null | tail -n +$((KEEP_WEEKLY + 1)) | xargs -r rm --
+prune() { # desen sayı — eşleşen dosya yoksa da hata vermez (pipefail altında ls'nin "yok" hatası yutulur)
+  { ls -1t "$DIR"/$1 2>/dev/null || true; } | tail -n +$(($2 + 1)) | xargs -r rm --
+}
+prune 'nightly-*.dump' "$KEEP_NIGHTLY"
+prune 'weekly-*.dump' "$KEEP_WEEKLY"
 
 UPLOADED=false
 if [[ -f "$BUNNY_ENV" ]]; then

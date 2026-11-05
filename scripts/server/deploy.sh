@@ -44,7 +44,7 @@ unset NODE_OPTIONS
 step "Yayın öncesi yedek"
 mkdir -p "$BACKUP_DIR"
 pg_dump --format=custom --file="$BACKUP_DIR/predeploy-$(date +%Y%m%d-%H%M%S).dump" "$(envget DATABASE_MIGRATION_URL)"
-ls -1t "$BACKUP_DIR"/predeploy-*.dump | tail -n +11 | xargs -r rm --
+{ ls -1t "$BACKUP_DIR"/predeploy-*.dump 2>/dev/null || true; } | tail -n +11 | xargs -r rm --
 
 step "Veritabanı göçleri"
 pnpm --filter @dtd/api db:deploy
