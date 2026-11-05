@@ -22,11 +22,17 @@ cd "$ROOT"
 envget() { grep -m1 "^$1=" .env | cut -d= -f2-; }
 API_PORT="$(envget API_PORT)"; API_PORT="${API_PORT:-3100}"
 
+if [[ -z "${DTD_DEPLOY_PULLED:-}" ]]; then
 step "Kod çekiliyor ($BRANCH)"
 git fetch --prune origin
 git checkout "$BRANCH"
 git reset --hard "origin/$BRANCH"
 echo "Sürüm: $(git log -1 --format='%h %s')"
+# Bu betik az önce güncellenmiş olabilir; bash dosyayı parça parça okuduğu için eski/yeni karışmasın diye
+# yeni sürümüyle baştan çalıştırılır (kod zaten çekildi, ikinci turda çekme adımı atlanır).
+DTD_DEPLOY_PULLED=1 exec bash "$ROOT/scripts/server/deploy.sh" "$BRANCH"
+fi
+echo "Sürüm: $(git log -1 --format='%h %s') (betik güncel)"
 
 step "Bağımlılıklar"
 # .env'deki NODE_ENV=production geliştirme bağımlılıklarını (vite, rolldown, typescript) atlatmasın: build onlara muhtaç
