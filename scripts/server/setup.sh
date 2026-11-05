@@ -118,8 +118,22 @@ TOTP_ISSUER=firmaxi-staging
 REDIS_URL=redis://dtd:$REDIS_PASS@127.0.0.1:6379/0
 SITE_URL=https://staging.firmaxi.com
 SITE_INDEXABLE=false
+ENV_LABEL=staging
+ALERT_EMAIL_TO=
+RESEND_API_KEY=
 EOF
 fi
+
+step "Yedek ve geri yükleme provası (cron)"
+cat >/etc/cron.d/dtd-backup <<'EOF'
+# 3D-Shop (K59): gece yedeği 03:15, her ayın 1'inde 04:40 geri yükleme provası
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+15 3 * * * dtd bash /srv/dtd/app/scripts/server/backup.sh >> /srv/dtd/backup.log 2>&1
+40 4 1 * * root bash /srv/dtd/app/scripts/server/restore-test.sh >> /srv/dtd/restore-test.log 2>&1
+EOF
+chmod 644 /etc/cron.d/dtd-backup
+touch /srv/dtd/backup.log /srv/dtd/restore-test.log && chown dtd:dtd /srv/dtd/backup.log /srv/dtd/restore-test.log
 
 step "İlk yayın"
 sudo -u dtd -H bash "$APP/scripts/server/deploy.sh" main

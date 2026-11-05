@@ -3,6 +3,7 @@ import { LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '../../shared/api';
 import { Button } from '../../shared/ui';
+import { SystemStatus } from './system-status';
 
 const UPCOMING = [
   ['Mağazalar ve firmalar', 'F1 · ticari yapı ve kaynak siteler'],
@@ -48,6 +49,7 @@ export function HomePage({ me, onLoggedOut }: { me: AdminMe; onLoggedOut: () => 
             </li>
           ))}
         </ul>
+        <SystemStatus canResolve={me.roles.includes('platform_admin')} />
       </main>
     </div>
   );

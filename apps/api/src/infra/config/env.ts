@@ -25,6 +25,22 @@ const EnvSchema = z.object({
   TOTP_ISSUER: z.string().min(1).default('firmaxi'),
   /** nginx arkasında gerçek istemci IP'si için (üretimde 1) */
   TRUST_PROXY: z.coerce.number().int().min(0).max(3).default(0),
+
+  /** Uyarı e-postaları (F0.7). Anahtar yoksa uyarılar yalnız günlüğe yazılır. Asla loglanmaz. */
+  RESEND_API_KEY: z.string().min(1).optional(),
+  MAIL_FROM: z.string().min(3).default('Dijital Ticaret Dünyası <info@firmaxi.com>'),
+  /** Uyarıların gideceği adresler, virgülle ayrılmış */
+  ALERT_EMAIL_TO: z
+    .string()
+    .default('')
+    .transform((v) =>
+      v
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  /** Uyarı konusunda ortam adı (staging / production) */
+  ENV_LABEL: z.string().default('yerel'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

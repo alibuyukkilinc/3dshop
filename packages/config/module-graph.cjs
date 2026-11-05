@@ -8,6 +8,8 @@ module.exports = {
   platform: [],
   audit: ['platform'],
   identity: ['platform', 'audit'],
+  // Operasyon: hata kaydı, uyarılar, yedek durumu (F0.7). Hiçbir domain modülü ops'a bağımlı olmaz.
+  ops: [...KERNEL],
   commerce: [...KERNEL],
   world: [...KERNEL],
   assets: [...KERNEL],

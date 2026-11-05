@@ -1,0 +1,43 @@
+// Modül: modules/ops. Kendi hata kaydımız (dış servis yok, veri sunucuda kalır) ve uyarı kısıtlaması. Cortex F0.7.
+
+/// Aynı hata türü (parmak izi) tek satırda sayılır; son örneğin yığın izi saklanır.
+model ErrorEvent {
+  fingerprint  String    @id
+  /// api | worker | web | job
+  source       String
+  name         String
+  message      String
+  stack        String?
+  count        Int       @default(1)
+  firstSeenAt  DateTime  @default(now()) @map("first_seen_at") @db.Timestamptz(3)
+  lastSeenAt   DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  /// Son örneğin bağlamı: method, path, request_id, olay türü (kişisel veri yazılmaz)
+  lastContext  Json?     @map("last_context")
+  resolvedAt   DateTime? @map("resolved_at") @db.Timestamptz(3)
+  resolvedBy   String?   @map("resolved_by")
+
+  @@index([resolvedAt, lastSeenAt])
+  @@map("error_events")
+  @@schema("ops")
+}
+
+/// Uyarı kısıtlaması: aynı anahtar saatte en çok bir kez e-posta olur.
+model AlertState {
+  key        String   @id
+  lastSentAt DateTime @map("last_sent_at") @db.Timestamptz(3)
+  sentCount  Int      @default(1) @map("sent_count")
+
+  @@map("alert_state")
+  @@schema("ops")
+}
+
+/// Gece yedeği gibi zamanlanmış işlerin son sonucu (panelde gösterilir).
+model JobHeartbeat {
+  job        String   @id
+  ok         Boolean
+  finishedAt DateTime @map("finished_at") @db.Timestamptz(3)
+  detail     Json?
+
+  @@map("job_heartbeats")
+  @@schema("ops")
+}
