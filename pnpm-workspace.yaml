@@ -7,3 +7,9 @@ onlyBuiltDependencies:
   - '@swc/core'
   - esbuild
   - prisma
+
+# Güvenlik yamaları (F6.1, pnpm audit): Prisma CLI'nin alt bağımlılıkları. mysql2 çalışma anında yüklenmez
+# (PostgreSQL), deepmerge-ts yalnız prisma.config okur; yine de yamalı sürüme zorlanır.
+overrides:
+  mysql2: '>=3.23.1'
+  deepmerge-ts: '>=8.0.0'

@@ -1,0 +1,56 @@
+# CI (F6.1, C3 güvenlik listesi): lint + typecheck + mimari + testler (gerçek PostgreSQL) + bağımlılık taraması.
+# Sır kullanmaz: test veritabanı iş akışı içinde açılır ve iş bitince silinir.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # Roller yerel kurulumla aynı (scripts/db/init-dev.ps1): dtd_owner göç ve test DB, dtd_app çalışma anı
+      DATABASE_MIGRATION_URL: postgresql://dtd_owner:ci-owner@localhost:5432/dtd_ci
+      DATABASE_URL: postgresql://dtd_app:ci-app@localhost:5432/dtd_ci
+      SECRETS_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      INTEGRATION_SYNC_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Veritabanı rolleri
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE dtd_owner LOGIN CREATEDB PASSWORD 'ci-owner';
+          CREATE ROLE dtd_app LOGIN PASSWORD 'ci-app';
+          GRANT dtd_app TO dtd_owner;
+          CREATE DATABASE dtd_ci OWNER dtd_owner;
+          SQL
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Bağımlılık taraması (yüksek ve kritik açık varsa kırmızı)
+        run: pnpm audit --prod --audit-level high

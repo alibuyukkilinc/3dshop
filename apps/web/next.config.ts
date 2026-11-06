@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import { securityHeaders } from './src/lib/security-headers';
 
 /**
  * Halka açık web (K16, K49): SSR sayfalar, 2D katalog ve 3D istemci kabuğu.
@@ -13,6 +14,10 @@ const config: NextConfig = {
   webpack(cfg) {
     cfg.resolve.extensionAlias = { '.js': ['.ts', '.tsx', '.js'] };
     return cfg;
+  },
+  // Güvenlik başlıkları her yanıtta (F6.1): CSP, HSTS, çerçeveleme yasağı, izin politikası
+  async headers() {
+    return [{ source: '/:path*', headers: securityHeaders(process.env.NODE_ENV !== 'production') }];
   },
   async rewrites() {
     return process.env.NODE_ENV === 'production' ? [] : [{ source: '/api/:path*', destination: `${apiTarget}/api/:path*` }];
