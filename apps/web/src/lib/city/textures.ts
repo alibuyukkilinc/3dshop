@@ -245,11 +245,11 @@ export function facadeTexture(seed: number, base: string, size = 256): CanvasTex
   const cw = size / cols;
   for (let f = 0; f < floors; f++)
     for (let c = 0; c < cols; c++) {
+      // Gündüz camı: gökyüzünü yansıtan gri-mavi, tonu pencereden pencereye az değişir; nadiren perde/ışık
       const v = rnd();
-      const lit = v > 0.86;
-      const sky = 60 + Math.floor(rnd() * 40);
-      ctx.fillStyle = lit ? `rgb(${200 + sky / 4},${190 + sky / 4},${150})` : `rgb(${sky * 0.55},${sky * 0.7},${sky * 0.9})`;
-      ctx.fillRect(c * cw + cw * 0.14, f * fh + fh * 0.2, cw * 0.72, fh * 0.6);
+      const sky = 118 + Math.floor(rnd() * 34);
+      ctx.fillStyle = v > 0.96 ? `rgb(${sky + 40},${sky + 34},${sky + 14})` : `rgb(${sky * 0.78},${sky * 0.88},${sky})`;
+      ctx.fillRect(c * cw + cw * 0.1, f * fh + fh * 0.18, cw * 0.8, fh * 0.64);
     }
   grain(ctx, size, 14, rnd);
   return toTexture(cv, true);

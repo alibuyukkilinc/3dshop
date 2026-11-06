@@ -3,12 +3,12 @@ import type { SceneDocument } from '@dtd/scene-runtime';
 import {
   ACESFilmicToneMapping,
   Box3,
-  BoxGeometry,
   DirectionalLight,
   Fog,
   Group,
   HemisphereLight,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   type Object3D,
   PCFShadowMap,
@@ -27,6 +27,8 @@ import { PostFx } from './postfx';
 import type { QualitySettings } from './quality';
 import { SKY, SUN_DIR, bakeSkyEnvironment, createSkyDome } from './sky';
 import { type AtlasCache, type SurfaceKit, createAtlasCache, createSurfaceKit, enhanceRegion } from './surfaces';
+import { type Traffic, createTraffic } from './traffic';
+import { tramParts } from './vehicles';
 
 export interface Manifest {
   world: { slug: string; name: string };
@@ -65,6 +67,8 @@ export interface CityCallbacks {
 const EYE = 1.7;
 const WALK = 4.2;
 const TRAM_SPEED = 9;
+/** Cadde ve trafik şeritlerinin hat ucundan uzantısı: en uzak sisin (400 m) ötesi */
+const STREET_REACH = 460;
 /** Mağaza tabelası renkleri (sırayla; mağaza kimliğinden seçilir, her açılışta aynı) */
 const SIGN_COLORS = ['#0f766e', '#1d4ed8', '#b45309', '#7c3aed', '#be123c', '#047857'];
 
@@ -98,6 +102,8 @@ export class CityRuntime {
   private readonly kit: SurfaceKit;
   private readonly atlas: AtlasCache;
   private post: PostFx | null = null;
+  private readonly traffic: Traffic;
+  private tramDispose: () => void = () => {};
   private clock = 0;
   private interior: { built: Interior; store: StoreRef; color: string } | null = null;
   private entering = false;
@@ -141,12 +147,15 @@ export class CityRuntime {
     this.scene.add(this.tram);
     this.kit = createSurfaceKit();
     this.atlas = createAtlasCache();
-    this.decor = createCityDecor(this.bounds, manifest.regions, manifest.transit_lines, this.kit, { shadows: settings.shadows, skyline: settings.skyline }, [
+    this.decor = createCityDecor(this.bounds, manifest.regions, manifest.transit_lines, this.kit, { shadows: settings.shadows, skyline: settings.skyline, reach: STREET_REACH }, [
       manifest.spawn[0],
       manifest.spawn[2],
     ]);
     this.scene.add(this.decor.root);
     this.obstacles.push(...this.decor.obstacles);
+    this.traffic = createTraffic(manifest.transit_lines, this.bounds, settings.shadows, STREET_REACH);
+    this.scene.add(this.traffic.root);
+    this.obstacles.push(...this.traffic.obstacles);
     this.applySettings(settings);
     // Varlık adresi: hangi bölgenin paketinde varsa oradan
     this.loader = createGltfMeshLoader(async (versionId, lod) => {
@@ -253,6 +262,8 @@ export class CityRuntime {
     }
     this.interior?.built.dispose();
     this.decor.dispose();
+    this.traffic.dispose();
+    this.tramDispose();
     this.post?.dispose();
     this.sky.dispose();
     this.kit.dispose();
@@ -367,7 +378,7 @@ export class CityRuntime {
       this.ride.t += dt;
       const r = rideAt(this.ride.from, this.ride.to, TRAM_SPEED, this.ride.t);
       this.pos = r.pos;
-      this.tram.position.set(r.pos[0], 0, r.pos[1] - 2.2);
+      this.tram.position.set(r.pos[0], 0, r.pos[1]);
       if (r.done) {
         this.ride = null;
         this.cb.onRide(false);
@@ -385,6 +396,7 @@ export class CityRuntime {
       }
       this.animateTram(dt);
     }
+    this.traffic.update(dt, this.pos, this.settings.fog);
     this.camera.position.set(this.pos[0], this.debugEye, this.pos[1]);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
     this.sky.mesh.position.copy(this.camera.position);
@@ -501,7 +513,8 @@ export class CityRuntime {
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
     this.tramT = (this.tramT + dt * TRAM_SPEED) % (len * 2);
     const d = this.tramT < len ? this.tramT : len * 2 - this.tramT;
-    this.tram.position.set(a[0] + ((b[0] - a[0]) * d) / len, 0, a[1] + ((b[1] - a[1]) * d) / len - 2.2);
+    this.tram.position.set(a[0] + ((b[0] - a[0]) * d) / len, 0, a[1] + ((b[1] - a[1]) * d) / len);
+    this.tram.rotation.y = -Math.atan2(b[1] - a[1], b[0] - a[0]);
   }
 
   private sampleFps(now: number) {
@@ -560,23 +573,30 @@ export class CityRuntime {
     }
   }
 
-  /** Tramvay: beyaz gövde, renk şeridi, koyu camlar, çatı ekipmanı (iki çizim çağrısı başına parça) */
+  /** Tramvay (görsel iyileştirme 3): üç modüllü alçak tabanlı araç, raylar üzerinde; pantograf katener teline değer */
   private makeTram(): Group {
     const g = new Group();
-    const part = (w: number, h: number, d: number, color: string, y: number, extra: Partial<{ roughness: number; metalness: number; x: number }> = {}) => {
-      const m = new Mesh(new BoxGeometry(w, h, d), new MeshStandardMaterial({ color, roughness: extra.roughness ?? 0.5, metalness: extra.metalness ?? 0.1 }));
-      m.position.set(extra.x ?? 0, y, 0);
-      m.castShadow = true;
+    const p = tramParts();
+    const paint = new MeshStandardMaterial({ color: '#f4f5f2', roughness: 0.3, metalness: 0.35 });
+    const glass = new MeshStandardMaterial({ color: '#1b252d', roughness: 0.05, metalness: 0.7 });
+    const accent = new MeshStandardMaterial({ color: '#0f766e', roughness: 0.35, metalness: 0.3 });
+    const dark = new MeshStandardMaterial({ color: '#2a2f35', roughness: 0.5, metalness: 0.5 });
+    const lights = new MeshBasicMaterial({ color: '#fff6dc' });
+    for (const [geo, mat] of [
+      [p.body, paint],
+      [p.glass, glass],
+      [p.accent, accent],
+      [p.dark, dark],
+      [p.lights, lights],
+    ] as const) {
+      const m = new Mesh(geo, mat);
+      m.castShadow = mat !== lights;
+      m.receiveShadow = true;
       g.add(m);
+    }
+    this.tramDispose = () => {
+      for (const x of [...Object.values(p), paint, glass, accent, dark, lights]) x.dispose();
     };
-    part(12, 2.7, 2.6, '#f3f4f1', 1.75);
-    part(12.04, 0.32, 2.64, '#0f766e', 0.62);
-    part(12.04, 0.12, 2.64, '#0f766e', 3.02);
-    part(11.4, 1.05, 2.66, '#1e2a35', 2.25, { roughness: 0.15, metalness: 0.6 });
-    part(12.3, 0.22, 2.4, '#d6d8d4', 3.2);
-    part(2.2, 0.3, 1.2, '#4b5563', 3.45, { x: -2 });
-    // Ön/arka farlar
-    for (const x of [-6.03, 6.03]) part(0.06, 0.25, 2.0, '#fff7d6', 0.95, { x });
     return g;
   }
 

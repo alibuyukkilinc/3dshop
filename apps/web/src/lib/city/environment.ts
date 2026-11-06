@@ -115,6 +115,8 @@ export interface DecorOptions {
   shadows: boolean;
   /** Ufuktaki silüet binaları (orta/yüksek kalite) */
   skyline: boolean;
+  /** Caddenin hat ucundan dışarı uzantısı (m): sis mesafesinin ötesine, yol ufukta kaybolur */
+  reach: number;
 }
 
 /**
@@ -168,6 +170,10 @@ export function createCityDecor(
   const trees: Matrix4[] = [];
   const lamps: Matrix4[] = [];
   const bins: Matrix4[] = [];
+  const signals: Matrix4[] = [];
+  const shelters: Matrix4[] = [];
+  const wire = new MeshStandardMaterial({ color: '#2b2f33', roughness: 0.5, metalness: 0.6 });
+  disposables.push(wire);
   const at = (x: number, z: number, rotY = 0, s = 1) =>
     new Matrix4().compose(new Vector3(x, 0, z), new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), rotY), new Vector3(s, s, s));
 
@@ -178,8 +184,8 @@ export function createCityDecor(
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
       const dir: V2 = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
       const nrm: V2 = [-dir[1], dir[0]];
-      // Hat şehir sınırına kadar uzatılır (bölge caddeleri de sınıra kadar gider)
-      const ext = 60;
+      // Cadde sisin ötesine uzanır: ufukta kaybolan yol, trafik orada görünmeden döner
+      const ext = opts.reach;
       const A: V2 = [a[0] - dir[0] * ext, a[1] - dir[1] * ext];
       const B: V2 = [b[0] + dir[0] * ext, b[1] + dir[1] * ext];
       const total = len + ext * 2;
@@ -225,6 +231,30 @@ export function createCityDecor(
             if (Math.abs(k) < 1.5) continue;
             flat(stripGeo(A, B, k, 0.5, 0.032, along + ds - 1.6, along + ds + 1.6), paint);
           }
+        // Trafik ışıkları: geçidin iki yanında, gelen trafiğe dönük (sağdan akış)
+        for (const ds of [-14, 14])
+          for (const side of [-1, 1]) {
+            const sAt = along + ds - side * 2.4;
+            const x = A[0] + dir[0] * sAt + nrm[0] * side * 7.45;
+            const z = A[1] + dir[1] * sAt + nrm[1] * side * 7.45;
+            signals.push(at(x, z, Math.atan2(-dir[0] * side, -dir[1] * side)));
+            obstacles.push({ x, z, r: 0.3 });
+          }
+        // Durak sığınağı: güney kaldırımında, caddeye dönük
+        if (Math.abs(lateral) < 3) {
+          const x = st[0] + nrm[0] * 10.4;
+          const z = st[1] + nrm[1] * 10.4;
+          shelters.push(at(x, z, Math.atan2(-nrm[0], -nrm[1])));
+          obstacles.push({ x: x - dir[0] * 1.6, z: z - dir[1] * 1.6, r: 0.9 }, { x, z, r: 0.9 }, { x: x + dir[0] * 1.6, z: z + dir[1] * 1.6, r: 0.9 });
+        }
+      }
+      // Katener: tramvay yolunun üstünde temas teli, iki yandaki lamba direklerine gergi telleri
+      flat(new BoxGeometry(total, 0.025, 0.025).rotateY(-Math.atan2(dir[1], dir[0])).translate((A[0] + B[0]) / 2, 5.93, (A[1] + B[1]) / 2), wire);
+      for (let s = 6; s < total - 6; s += 36) {
+        const x = A[0] + dir[0] * s;
+        const z = A[1] + dir[1] * s;
+        if (nearStation(x + nrm[0] * 7.5, z + nrm[1] * 7.5)) continue;
+        flat(new BoxGeometry(0.02, 0.02, 15).rotateY(-Math.atan2(dir[1], dir[0])).translate(x, 6.0, z), wire);
       }
       // Süsler: kaldırım kenarında lambalar (iki yan, 18 m), dış kaldırımda ağaçlar (12 m). Mağaza önü
       // (cadde kuzeyi, panoların durduğu taraf) ağaçsız bırakılır: vitrin görünsün.
@@ -233,7 +263,8 @@ export function createCityDecor(
           const x = A[0] + dir[0] * s + nrm[0] * side * 7.5;
           const z = A[1] + dir[1] * s + nrm[1] * side * 7.5;
           if (nearStation(x, z)) continue;
-          lamps.push(at(x, z, side > 0 ? 0 : Math.PI));
+          // Kol caddeye doğru (yerel +z → −normal·yan)
+          lamps.push(at(x, z, Math.atan2(-nrm[0] * side, -nrm[1] * side)));
           obstacles.push({ x, z, r: 0.35 });
           if ((s / 18) % 3 === 1) {
             const bx = x + dir[0] * 1.6;
@@ -336,7 +367,9 @@ export function createCityDecor(
 
   addTrees(root, trees, shadows, disposables);
   addStreetFurniture(root, lamps, bins, shadows, disposables);
-  if (opts.skyline) addSkyline(root, bounds, disposables);
+  addSignals(root, signals, shadows, disposables);
+  addShelters(root, shelters, shadows, disposables);
+  if (opts.skyline) addSkyline(root, bounds, lines, disposables);
 
   return {
     root,
@@ -373,7 +406,7 @@ function addTrees(root: Group, trees: Matrix4[], shadows: boolean, disposables: 
   for (const g of trunkParts) g.dispose();
 
   // İç taç: gürültüyle bozulmuş küre
-  const core = new IcosahedronGeometry(1, 3);
+  const core = new IcosahedronGeometry(1, 2);
   const pos = core.getAttribute('position');
   const v = new Vector3();
   for (let i = 0; i < pos.count; i++) {
@@ -471,11 +504,81 @@ function addStreetFurniture(root: Group, lamps: Matrix4[], bins: Matrix4[], shad
   inst(binGeo, binMat, bins, true);
 }
 
+/** Trafik ışığı: direk + üç gözlü kafa (yeşil yanıyor). Yerel +z gelen trafiğe bakar. */
+function addSignals(root: Group, mats: Matrix4[], shadows: boolean, disposables: { dispose(): void }[]) {
+  if (!mats.length) return;
+  const pole = mergeGeometries([
+    new CylinderGeometry(0.06, 0.08, 3.4, 10).translate(0, 1.7, 0).toNonIndexed(),
+    new BoxGeometry(0.34, 0.95, 0.22).translate(0, 2.95, 0.12).toNonIndexed(),
+    new BoxGeometry(0.42, 1.05, 0.03).translate(0, 2.95, -0.01).toNonIndexed(),
+  ])!;
+  const lamp = (y: number) => new CylinderGeometry(0.095, 0.095, 0.03, 14).rotateX(Math.PI / 2).translate(0, y, 0.245);
+  const green = lamp(2.66);
+  const off = mergeGeometries([lamp(3.24).toNonIndexed(), lamp(2.95).toNonIndexed()])!;
+  const metal = new MeshStandardMaterial({ color: '#23272b', roughness: 0.5, metalness: 0.6 });
+  const greenMat = new MeshStandardMaterial({ color: '#0c3', emissive: '#19ff73', emissiveIntensity: 2.2 });
+  const offMat = new MeshStandardMaterial({ color: '#2a1d14', roughness: 0.3 });
+  disposables.push(pole, green, off, metal, greenMat, offMat);
+  for (const [geo, mat, cast] of [
+    [pole, metal, true],
+    [green, greenMat, false],
+    [off, offMat, false],
+  ] as const) {
+    const m = new InstancedMesh(geo, mat, mats.length);
+    mats.forEach((x, i) => m.setMatrixAt(i, x));
+    m.castShadow = cast && shadows;
+    m.computeBoundingSphere();
+    root.add(m);
+  }
+}
+
+/** Durak sığınağı (5 m): dört direk, eğimli çatı, arka ve yan cam, bank, aydınlatmalı reklam panosu */
+function addShelters(root: Group, mats: Matrix4[], shadows: boolean, disposables: { dispose(): void }[]) {
+  if (!mats.length) return;
+  const nx = (g: BufferGeometry) => g.toNonIndexed();
+  const frame = mergeGeometries([
+    ...[-2.4, 2.4].flatMap((x) => [-0.7, 0.55].map((z) => nx(new BoxGeometry(0.08, 2.6, 0.08).translate(x, 1.3, z)))),
+    nx(new BoxGeometry(5.2, 0.12, 1.75).rotateX(-0.06).translate(0, 2.66, -0.05)),
+    nx(new BoxGeometry(4.6, 0.06, 0.06).translate(0, 0.3, -0.7)),
+    // Bank: oturak ve iki ayak
+    nx(new BoxGeometry(3.0, 0.06, 0.42).translate(-0.4, 0.48, -0.42)),
+    ...[-1.7, 0.9].map((x) => nx(new BoxGeometry(0.06, 0.45, 0.36).translate(x, 0.23, -0.42))),
+  ])!;
+  const glass = mergeGeometries([nx(new BoxGeometry(4.7, 2.2, 0.02).translate(0, 1.4, -0.72)), ...[-2.42, 2.42].map((x) => nx(new BoxGeometry(0.02, 2.2, 1.1).translate(x, 1.4, -0.2)))])!;
+  const ad = new BoxGeometry(1.25, 1.85, 0.12).translate(1.75, 1.35, -0.62);
+  const metal = new MeshStandardMaterial({ color: '#30363c', roughness: 0.45, metalness: 0.7 });
+  const glassMat = new MeshStandardMaterial({ color: '#cfe0e8', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.22, depthWrite: false });
+  const adMat = new MeshStandardMaterial({ color: '#e8eef2', emissive: '#f4f7ff', emissiveIntensity: 0.55, roughness: 0.3 });
+  disposables.push(frame, glass, ad, metal, glassMat, adMat);
+  for (const [geo, mat, cast] of [
+    [frame, metal, true],
+    [glass, glassMat, false],
+    [ad, adMat, true],
+  ] as const) {
+    const m = new InstancedMesh(geo, mat, mats.length);
+    mats.forEach((x, i) => m.setMatrixAt(i, x));
+    m.castShadow = cast && shadows;
+    m.receiveShadow = shadows;
+    if (mat === glassMat) m.userData.noAO = true;
+    m.computeBoundingSphere();
+    root.add(m);
+  }
+}
+
 /**
- * Ufuk silüeti: şehir sınırının 70–230 m dışında, sisle kaybolan kule ve bloklar. Cephe dokusu dünya
+ * Ufuk silüeti:şehir sınırının 70–230 m dışında, sisle kaybolan kule ve bloklar. Cephe dokusu dünya
  * koordinatından döşenir (kutu boyu ne olursa olsun kat yüksekliği 3 m kalır); çatılar düz gri.
  */
-function addSkyline(root: Group, bounds: { min: V2; max: V2 }, disposables: { dispose(): void }[]) {
+function addSkyline(root: Group, bounds: { min: V2; max: V2 }, lines: { path: V2[] }[], disposables: { dispose(): void }[]) {
+  // Ufka uzanan caddenin koridoru boş kalır (yanal 30 m)
+  const onStreet = (x: number, z: number, half: number) =>
+    lines.some((l) =>
+      l.path.slice(1).some((b, i) => {
+        const a = l.path[i]!;
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        return Math.abs(((x - a[0]) * -(b[1] - a[1])) / len + ((z - a[1]) * (b[0] - a[0])) / len) < 30 + half;
+      }),
+    );
   let seed = 97;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const bases = ['#b9b4ac', '#9fa6ad', '#c8c0b3', '#8e9499'];
@@ -497,6 +600,7 @@ function addSkyline(root: Group, bounds: { min: V2; max: V2 }, disposables: { di
     const w = 14 + rnd() * 22;
     const d = 14 + rnd() * 22;
     const g = Math.floor(rnd() * bases.length);
+    if (onStreet(x, z, Math.max(w, d) / 2)) continue;
     groups[g]!.push(new Matrix4().compose(new Vector3(x, 0, z), new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.floor(rnd() * 2) * (Math.PI / 2)), new Vector3(w, h, d)));
     colors[g]!.push(new Color().setHSL(0.08, 0.05, 0.85 + rnd() * 0.2));
   }
