@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rideAt, step } from './movement';
+import { type TramBox, brakingSpeed, clearanceAhead, pushOutOfBox, rideAt, step } from './movement';
 import { degrade, guessQuality } from './quality';
 
 describe('kalite profili (K12)', () => {
@@ -33,5 +33,30 @@ describe('yürüme ve tramvay (K04)', () => {
   it('tramvay sabit hızla gider ve durakta biter', () => {
     expect(rideAt([-100, 20], [0, 20], 10, 5)).toEqual({ pos: [-50, 20], done: false });
     expect(rideAt([-100, 20], [0, 20], 10, 20)).toEqual({ pos: [0, 20], done: true });
+  });
+});
+
+describe('tramvay oyuncunun içinden geçmez', () => {
+  // x ekseni boyunca hat, merkez 0,0: gövde x −13,5…13,5, z −1,35…1,35
+  const box: TramBox = { x: 0, z: 0, dirX: 1, dirZ: 0, halfL: 13.5, halfW: 1.35 };
+
+  it('gövdeye yandan girilmez: en yakın kenara itilir', () => {
+    expect(pushOutOfBox([5, 1], box)).toEqual([5, 1.75]);
+    expect(pushOutOfBox([5, -0.2], box)).toEqual([5, -1.75]);
+    expect(pushOutOfBox([13.6, 0], box)).toEqual([13.9, 0]);
+    expect(pushOutOfBox([5, 3], box)).toEqual([5, 3]);
+  });
+
+  it('önündeki boşluk: koridorda ve öndeyse ölçülür; yanda/arkada sonsuz', () => {
+    expect(clearanceAhead([24, 0.5], box, 1)).toBeCloseTo(10.1);
+    expect(clearanceAhead([24, 0.5], box, -1)).toBe(Infinity);
+    expect(clearanceAhead([24, 3], box, 1)).toBe(Infinity);
+    expect(clearanceAhead([0, 1.75], box, 1)).toBe(Infinity);
+  });
+
+  it('fren: boşluk durma payına inince hız sıfır', () => {
+    expect(brakingSpeed(Infinity, 3.5, 1.5)).toBe(Infinity);
+    expect(brakingSpeed(1.5, 3.5, 1.5)).toBe(0);
+    expect(brakingSpeed(13.07, 3.5, 1.5)).toBeCloseTo(9, 1);
   });
 });

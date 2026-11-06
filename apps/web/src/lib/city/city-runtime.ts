@@ -23,7 +23,7 @@ import {
 import { type CityDecor, createCityDecor, createStoreSign } from './environment';
 import { type Interior, type InteriorData, type ProductSpot, buildInterior } from './interior';
 import { aislePath, yawTo } from './interior-layout';
-import { type Obstacle, type V2, rideAt, step } from './movement';
+import { type Obstacle, type TramBox, type V2, brakingSpeed, clearanceAhead, pushOutOfBox, rideAt, step } from './movement';
 import { PostFx } from './postfx';
 import type { QualitySettings } from './quality';
 import { SKY, SUN_DIR, bakeSkyEnvironment, createSkyDome } from './sky';
@@ -68,6 +68,12 @@ export interface CityCallbacks {
 const EYE = 1.7;
 const WALK = 4.2;
 const TRAM_SPEED = 9;
+/** Tramvay gövdesi (vehicles.ts tramParts: 27 m × 2,7 m) ve fren: önünde oyuncu varsa 1,5 m kala durur */
+const TRAM_HALF_L = 13.5;
+const TRAM_HALF_W = 1.35;
+const TRAM_DECEL = 3.5;
+const TRAM_ACCEL = 1.4;
+const TRAM_STOP_GAP = 1.5;
 /** Cadde ve trafik şeritlerinin hat ucundan uzantısı: en uzak sisin (400 m) ötesi */
 const STREET_REACH = 460;
 /** Mağaza tabelası renkleri (sırayla; mağaza kimliğinden seçilir, her açılışta aynı) */
@@ -93,6 +99,7 @@ export class CityRuntime {
   private fpsStart = performance.now();
   private tram: Group;
   private tramT = 0;
+  private tramV = TRAM_SPEED;
   private ride: { from: V2; to: V2; t: number } | null = null;
   private currentRegion: string | null = null;
   private readonly bounds: { min: V2; max: V2 };
@@ -422,8 +429,7 @@ export class CityRuntime {
       this.pos = r.pos;
       this.tram.position.set(r.pos[0], 0, r.pos[1]);
       if (r.done) {
-        this.ride = null;
-        this.cb.onRide(false);
+        this.endRide();
         void this.stream();
       }
     } else {
@@ -437,6 +443,9 @@ export class CityRuntime {
         this.checkStores();
       }
       this.animateTram(dt);
+      // Tramvay oyuncunun içinden geçmez: gövdeye yürünemez, yanından geçerken kenara itilir
+      const box = this.tramBox();
+      if (box) this.pos = pushOutOfBox(this.pos, box);
     }
     this.traffic.update(dt, this.pos, this.settings.fog);
     this.camera.position.set(this.pos[0], this.debugEye, this.pos[1]);
@@ -636,15 +645,60 @@ export class CityRuntime {
     }
   }
 
-  private animateTram(dt: number) {
+  /** Tramvay hattı (ilk hat, uçtan uca gidip gelir) */
+  private tramLine(): { a: V2; b: V2; len: number } | null {
     const line = this.manifest.transit_lines[0];
-    if (!line || line.path.length < 2) return;
-    const [a, b] = [line.path[0]!, line.path[line.path.length - 1]!];
+    if (!line || line.path.length < 2) return null;
+    const a = line.path[0]!;
+    const b = line.path[line.path.length - 1]!;
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    this.tramT = (this.tramT + dt * TRAM_SPEED) % (len * 2);
+    return len > 0 ? { a, b, len } : null;
+  }
+
+  private tramBox(): TramBox | null {
+    const l = this.tramLine();
+    if (!l) return null;
+    return {
+      x: this.tram.position.x,
+      z: this.tram.position.z,
+      dirX: (l.b[0] - l.a[0]) / l.len,
+      dirZ: (l.b[1] - l.a[1]) / l.len,
+      halfL: TRAM_HALF_L,
+      halfW: TRAM_HALF_W,
+    };
+  }
+
+  private animateTram(dt: number) {
+    const l = this.tramLine();
+    if (!l) return;
+    const { a, b, len } = l;
+    // Önünde (ray koridorunda) oyuncu varsa yumuşak fren, yol açılınca yeniden hızlanır
+    const box = this.tramBox()!;
+    const travel = this.tramT < len ? 1 : -1;
+    const want = Math.min(TRAM_SPEED, brakingSpeed(clearanceAhead(this.pos, box, travel), TRAM_DECEL, TRAM_STOP_GAP));
+    this.tramV = this.tramV < want ? Math.min(want, this.tramV + TRAM_ACCEL * dt) : want;
+    this.tramT = (this.tramT + dt * this.tramV) % (len * 2);
     const d = this.tramT < len ? this.tramT : len * 2 - this.tramT;
     this.tram.position.set(a[0] + ((b[0] - a[0]) * d) / len, 0, a[1] + ((b[1] - a[1]) * d) / len);
     this.tram.rotation.y = -Math.atan2(b[1] - a[1], b[0] - a[0]);
+  }
+
+  /** Yolculuk bitti: tramvay varış durağında kalır (ışınlanmaz), oyuncu kapıdan yana iner */
+  private endRide() {
+    const ride = this.ride!;
+    this.ride = null;
+    const l = this.tramLine();
+    if (l) {
+      const dir: V2 = [(l.b[0] - l.a[0]) / l.len, (l.b[1] - l.a[1]) / l.len];
+      const along = (p: V2) => (p[0] - l.a[0]) * dir[0] + (p[1] - l.a[1]) * dir[1];
+      const d = Math.min(l.len, Math.max(0, along(ride.to)));
+      this.tramT = along(ride.to) >= along(ride.from) ? d : l.len * 2 - d;
+      this.tramV = 0;
+      this.tram.position.set(l.a[0] + dir[0] * d, 0, l.a[1] + dir[1] * d);
+      const side = TRAM_HALF_W + 1.2;
+      this.pos = [this.pos[0] - dir[1] * side, this.pos[1] + dir[0] * side];
+    }
+    this.cb.onRide(false);
   }
 
   private sampleFps(now: number) {
