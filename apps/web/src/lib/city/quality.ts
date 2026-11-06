@@ -11,12 +11,16 @@ export interface QualitySettings {
   /** Bu uzaklıktan (m) ötedeki bölge paketleri yüklenmez */
   streamRadius: number;
   fog: number;
+  /** Son işleme: ortam kapanması, parlama, renk derecelendirme (yalnız güçlü cihaz) */
+  post: boolean;
+  /** Ufuktaki silüet binaları */
+  skyline: boolean;
 }
 
 export const SETTINGS: Record<Quality, QualitySettings> = {
-  low: { dpr: 1, shadows: false, lod: 'lod2', streamRadius: 140, fog: 160 },
-  medium: { dpr: 1.5, shadows: false, lod: 'lod1', streamRadius: 220, fog: 260 },
-  high: { dpr: 2, shadows: true, lod: 'lod0', streamRadius: 320, fog: 400 },
+  low: { dpr: 1, shadows: false, lod: 'lod2', streamRadius: 140, fog: 160, post: false, skyline: false },
+  medium: { dpr: 1.5, shadows: false, lod: 'lod1', streamRadius: 220, fog: 260, post: false, skyline: true },
+  high: { dpr: 2, shadows: true, lod: 'lod0', streamRadius: 320, fog: 400, post: true, skyline: true },
 };
 
 export interface DeviceHints {

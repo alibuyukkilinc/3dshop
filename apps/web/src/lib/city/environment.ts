@@ -1,105 +1,41 @@
 import { drawBoard } from '@dtd/scene-runtime';
 import {
-  BackSide,
   Box3,
   BoxGeometry,
+  type BufferGeometry,
   CanvasTexture,
   Color,
   CylinderGeometry,
+  DoubleSide,
+  Float32BufferAttribute,
   Group,
   IcosahedronGeometry,
   InstancedMesh,
+  type Material,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
   type Object3D,
   PlaneGeometry,
-  PMREMGenerator,
   Quaternion,
-  RepeatWrapping,
   SRGBColorSpace,
-  type Scene,
-  ShaderMaterial,
-  SphereGeometry,
+  ShaderChunk,
   Vector3,
-  type WebGLRenderer,
 } from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Obstacle } from './movement';
+import { type SurfaceKind, type SurfaceKit, applyWorldUv } from './surfaces';
+import { facadeTexture, leafTexture } from './textures';
 
 /**
- * Şehir ortamı (F6 görsel iyileştirme): gökyüzü, çevre aydınlatması, bölgeler arası zemin ve cadde, tramvay
- * rayları, ağaç/lamba süsleri, mağaza tabelaları. Sahne belgelerine (K45) dokunmaz; yalnız istemcinin
- * çizimidir. Kalıcı içerik (park, meydan) editörle sahneye girer; buradaki süsler şehir genelidir.
+ * Şehir ortamı (görsel iyileştirme 1–2): bölgeler arası zemin ve cadde, bordür, şerit çizgileri, yaya
+ * geçitleri, tramvay yolu, ağaç/lamba, geçici meydan, ufuktaki silüet ve mağaza tabelaları. Sahne
+ * belgelerine (K45) dokunmaz; yalnız istemcinin çizimidir. Kalıcı içerik (park, meydan) editörle sahneye
+ * girer; buradaki süsler şehir genelidir.
  */
 
-export const SKY = { top: '#4a88cc', horizon: '#cfe0ee', ground: '#a8b3a2' } as const;
-
-/** Kameraya bağlı, sise girmeyen renk geçişli gök kubbesi */
-export function createSky(radius: number): Mesh {
-  const mat = new ShaderMaterial({
-    side: BackSide,
-    depthWrite: false,
-    fog: false,
-    uniforms: { top: { value: new Color(SKY.top) }, horizon: { value: new Color(SKY.horizon) }, ground: { value: new Color(SKY.ground) } },
-    vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-    fragmentShader:
-      'uniform vec3 top; uniform vec3 horizon; uniform vec3 ground; varying vec3 vDir;' +
-      'void main(){ float h = vDir.y; vec3 c = h > 0.0 ? mix(horizon, top, pow(h, 0.55)) : mix(horizon, ground, min(1.0, -h * 4.0));' +
-      ' gl_FragColor = vec4(c, 1.0); }',
-  });
-  const sky = new Mesh(new SphereGeometry(radius, 32, 16), mat);
-  sky.renderOrder = -1;
-  sky.frustumCulled = false;
-  return sky;
-}
-
-/** Yumuşak stüdyo çevresi: metal/pürüzlü malzemelere gerçekçi yansıma (tek seferlik PMREM) */
-export function applyEnvironment(renderer: WebGLRenderer, scene: Scene): () => void {
-  const pmrem = new PMREMGenerator(renderer);
-  const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environment = env;
-  scene.environmentIntensity = 0.55;
-  pmrem.dispose();
-  return () => env.dispose();
-}
-
-function noiseTexture(base: string, spread: number, size = 256, lines = false): CanvasTexture {
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = size;
-  const ctx = cv.getContext('2d')!;
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, size, size);
-  const img = ctx.getImageData(0, 0, size, size);
-  // Belirlenimci gürültü (her açılışta aynı görünüm)
-  let seed = 7;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const d = (rnd() - 0.5) * spread;
-    img.data[i] = Math.max(0, Math.min(255, img.data[i]! + d));
-    img.data[i + 1] = Math.max(0, Math.min(255, img.data[i + 1]! + d));
-    img.data[i + 2] = Math.max(0, Math.min(255, img.data[i + 2]! + d));
-  }
-  ctx.putImageData(img, 0, 0);
-  if (lines) {
-    // Kaldırım taşı derzleri
-    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-    ctx.lineWidth = 2;
-    for (let k = 0; k <= size; k += size / 4) {
-      ctx.beginPath();
-      ctx.moveTo(k, 0);
-      ctx.lineTo(k, size);
-      ctx.moveTo(0, k);
-      ctx.lineTo(size, k);
-      ctx.stroke();
-    }
-  }
-  const t = new CanvasTexture(cv);
-  t.wrapS = t.wrapT = RepeatWrapping;
-  t.colorSpace = SRGBColorSpace;
-  t.anisotropy = 8;
-  return t;
-}
+/** Bölge sahneleriyle aynı yüzey renkleri (scenes-seed): cadde, kaldırım, bölge zemini */
+const COLORS = { asphalt: '#4b5563', sidewalk: '#d6d3d1', ground: '#9aa39a', grass: '#ffffff', trackBed: '#8a8d8f', curb: '#b9b6b0' } as const;
 
 type V2 = [number, number];
 interface Region {
@@ -138,20 +74,19 @@ function uncovered(a: V2, b: V2, covered: Region[]): [number, number][] {
   return out.filter(([p, q]) => q - p > 1e-3);
 }
 
-/** Bant: a→b doğrultusunda, yanal kaydırma ve genişlikle yatay düzlem */
-function band(a: V2, b: V2, offset: number, width: number, y: number, mat: MeshStandardMaterial, repeat: number): Mesh {
+/** a→b doğrultusunda, yanal kaydırmalı yatay şerit geometrisi (dünya koordinatında) */
+function stripGeo(a: V2, b: V2, offset: number, width: number, y: number, along0 = 0, along1?: number): PlaneGeometry {
   const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const l1 = along1 ?? len;
   const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
-  const geo = new PlaneGeometry(len, width).rotateX(-Math.PI / 2);
-  const uv = geo.getAttribute('uv');
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (len / repeat), uv.getY(i) * (width / repeat));
-  const m = new Mesh(geo, mat);
+  const dir: V2 = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
   const nx = -Math.sin(ang);
   const nz = Math.cos(ang);
-  m.position.set((a[0] + b[0]) / 2 + nx * offset, y, (a[1] + b[1]) / 2 + nz * offset);
-  m.rotation.y = -ang;
-  m.receiveShadow = true;
-  return m;
+  const mid = (along0 + l1) / 2;
+  const geo = new PlaneGeometry(l1 - along0, width).rotateX(-Math.PI / 2);
+  geo.rotateY(-ang);
+  geo.translate(a[0] + dir[0] * mid + nx * offset, y, a[1] + dir[1] * mid + nz * offset);
+  return geo;
 }
 
 function inBox(p: V2, poly: V2[]): boolean {
@@ -176,45 +111,63 @@ export interface CityDecor {
   dispose(): void;
 }
 
+export interface DecorOptions {
+  shadows: boolean;
+  /** Ufuktaki silüet binaları (orta/yüksek kalite) */
+  skyline: boolean;
+}
+
 /**
- * Şehir geneli: zemin, paketsiz bölgelerde cadde + kaldırım, tüm hat boyunca raylar, ağaç ve lambalar.
- * Cadde ölçüleri bölge sahneleriyle aynı (cadde 14 m, kaldırım 8 m; scenes-seed).
+ * Şehir geneli: zemin, paketsiz bölgelerde cadde + kaldırım, tüm hat boyunca bordür, şerit çizgisi,
+ * tramvay yolu ve raylar, ağaç ve lambalar. Cadde ölçüleri bölge sahneleriyle aynı (cadde 14 m,
+ * kaldırım 8 m; scenes-seed).
  */
 export function createCityDecor(
   bounds: { min: V2; max: V2 },
   regions: Region[],
   lines: { path: V2[]; stations: { position: [number, number, number] | null }[] }[],
-  shadows: boolean,
+  kit: SurfaceKit,
+  opts: DecorOptions,
   /** Doğuş noktası (x, z): sahnesiz bölgedeyse geçici meydan buraya kurulur */
   spawn?: V2,
 ): CityDecor {
+  const { shadows } = opts;
   const root = new Group();
   const disposables: { dispose(): void }[] = [];
   const obstacles: Obstacle[] = [];
   const covered = regions.filter((r) => r.bundle_url);
 
-  const grassTex = noiseTexture('#93a58a', 26);
-  const asphaltTex = noiseTexture('#4a5059', 18);
-  const pavingTex = noiseTexture('#c9c3b8', 14, 256, true);
-  const plazaTex = noiseTexture('#b8ab97', 16, 256, true);
-  plazaTex.repeat.set(9, 9);
-  const grass = new MeshStandardMaterial({ map: grassTex, roughness: 1 });
-  const asphalt = new MeshStandardMaterial({ map: asphaltTex, roughness: 0.92 });
-  const paving = new MeshStandardMaterial({ map: pavingTex, roughness: 0.85 });
-  const plazaMat = new MeshStandardMaterial({ map: plazaTex, roughness: 0.85 });
-  const rail = new MeshStandardMaterial({ color: '#9aa3ad', roughness: 0.3, metalness: 0.9 });
-  disposables.push(grassTex, asphaltTex, pavingTex, plazaTex, grass, asphalt, paving, plazaMat, rail);
+  // Aynı malzemeli yüzeyler tek geometride toplanır (çizim çağrısı az)
+  const batches = new Map<Material, BufferGeometry[]>();
+  const surface = (geo: BufferGeometry, kind: SurfaceKind, color: string) => {
+    applyWorldUv(geo, new Matrix4(), kind);
+    const m = kit.material(kind, color);
+    const list = batches.get(m) ?? [];
+    list.push(geo);
+    batches.set(m, list);
+  };
+  const flat = (geo: BufferGeometry, mat: Material) => {
+    const list = batches.get(mat) ?? [];
+    list.push(geo);
+    batches.set(mat, list);
+  };
 
   // Zemin: şehrin dışına taşan çim; bölge zeminleri (y=0) bunun üstünde kalır
   const midZ = (bounds.min[1] + bounds.max[1]) / 2;
-  const depth = bounds.max[1] - bounds.min[1] + 600;
-  root.add(band([bounds.min[0] - 300, midZ], [bounds.max[0] + 300, midZ], 0, depth, -0.05, grass, 6));
+  const depth = bounds.max[1] - bounds.min[1] + 900;
+  surface(stripGeo([bounds.min[0] - 450, midZ], [bounds.max[0] + 450, midZ], 0, depth, -0.05), 'grass', COLORS.grass);
 
   const stations = lines.flatMap((l) => l.stations.flatMap((s) => (s.position ? [[s.position[0], s.position[2]] as V2] : [])));
   const nearStation = (x: number, z: number) => stations.some((s) => Math.hypot(s[0] - x, s[1] - z) < 8);
 
+  const paint = new MeshStandardMaterial({ color: '#f2f1ec', roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const rail = new MeshStandardMaterial({ color: '#a7adb3', roughness: 0.25, metalness: 0.95 });
+  const curbMat = kit.material('slab', COLORS.curb);
+  disposables.push(paint, rail);
+
   const trees: Matrix4[] = [];
   const lamps: Matrix4[] = [];
+  const bins: Matrix4[] = [];
   const at = (x: number, z: number, rotY = 0, s = 1) =>
     new Matrix4().compose(new Vector3(x, 0, z), new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), rotY), new Vector3(s, s, s));
 
@@ -229,31 +182,65 @@ export function createCityDecor(
       const ext = 60;
       const A: V2 = [a[0] - dir[0] * ext, a[1] - dir[1] * ext];
       const B: V2 = [b[0] + dir[0] * ext, b[1] + dir[1] * ext];
+      const total = len + ext * 2;
       // Paketli bölge dışında kalan yerlerde cadde + iki kaldırım
       for (const [t0, t1] of uncovered(A, B, covered)) {
         const p: V2 = [A[0] + (B[0] - A[0]) * t0, A[1] + (B[1] - A[1]) * t0];
         const q: V2 = [A[0] + (B[0] - A[0]) * t1, A[1] + (B[1] - A[1]) * t1];
-        root.add(band(p, q, 0, 14, 0.02, asphalt, 6), band(p, q, -11, 8, 0.05, paving, 2), band(p, q, 11, 8, 0.05, paving, 2));
+        surface(stripGeo(p, q, 0, 14, 0.0), 'asphalt', COLORS.asphalt);
+        surface(stripGeo(p, q, -11, 8, 0.1), 'paver', COLORS.sidewalk);
+        surface(stripGeo(p, q, 11, 8, 0.1), 'paver', COLORS.sidewalk);
       }
-      // Raylar (her yerde, bölge caddelerinin üstünde): iki ray, 1,435 m açıklık
+      // Tramvay yolu (beton yatak), raylar ve oluk
+      surface(stripGeo(A, B, 0, 2.9, 0.012), 'slab', COLORS.trackBed);
       for (const off of [-0.72, 0.72]) {
-        const r = new Mesh(new BoxGeometry(len + ext * 2, 0.06, 0.08), rail);
-        disposables.push(r.geometry);
-        r.position.set((A[0] + B[0]) / 2 + nrm[0] * off, 0.05, (A[1] + B[1]) / 2 + nrm[1] * off);
-        r.rotation.y = -Math.atan2(dir[1], dir[0]);
-        r.receiveShadow = shadows;
-        root.add(r);
+        const r = new BoxGeometry(total, 0.05, 0.075);
+        r.rotateY(-Math.atan2(dir[1], dir[0]));
+        r.translate((A[0] + B[0]) / 2 + nrm[0] * off, 0.035, (A[1] + B[1]) / 2 + nrm[1] * off);
+        flat(r, rail);
+      }
+      // Bordür taşları (kaldırım kenarı, 18 cm)
+      for (const side of [-1, 1]) {
+        const c = new BoxGeometry(total, 0.18, 0.26);
+        c.rotateY(-Math.atan2(dir[1], dir[0]));
+        c.translate((A[0] + B[0]) / 2 + nrm[0] * side * 7.05, 0.09, (A[1] + B[1]) / 2 + nrm[1] * side * 7.05);
+        applyWorldUv(c, new Matrix4(), 'slab');
+        const list = batches.get(curbMat) ?? [];
+        list.push(c);
+        batches.set(curbMat, list);
+      }
+      // Şerit çizgileri: tramvay yolu kenarı (sürekli), cadde kenarı (sürekli), şerit ortası (kesikli)
+      for (const side of [-1, 1]) {
+        flat(stripGeo(A, B, side * 1.65, 0.14, 0.03), paint);
+        flat(stripGeo(A, B, side * 6.55, 0.14, 0.03), paint);
+        for (let s = 0; s < total - 3; s += 9) flat(stripGeo(A, B, side * 4.1, 0.12, 0.03, s, s + 3), paint);
+      }
+      // Yaya geçitleri: her durağın iki yanında
+      for (const st of stations) {
+        const along = (st[0] - A[0]) * dir[0] + (st[1] - A[1]) * dir[1];
+        const lateral = (st[0] - A[0]) * nrm[0] + (st[1] - A[1]) * nrm[1];
+        if (Math.abs(lateral) > 8 || along < 0 || along > total) continue;
+        for (const ds of [-14, 14])
+          for (let k = -6.2; k <= 6.2; k += 1.0) {
+            if (Math.abs(k) < 1.5) continue;
+            flat(stripGeo(A, B, k, 0.5, 0.032, along + ds - 1.6, along + ds + 1.6), paint);
+          }
       }
       // Süsler: kaldırım kenarında lambalar (iki yan, 18 m), dış kaldırımda ağaçlar (12 m). Mağaza önü
       // (cadde kuzeyi, panoların durduğu taraf) ağaçsız bırakılır: vitrin görünsün.
-      const total = len + ext * 2;
       for (let s = 6; s < total - 6; s += 18) {
         for (const side of [-1, 1]) {
-          const x = A[0] + dir[0] * s + nrm[0] * side * 7.4;
-          const z = A[1] + dir[1] * s + nrm[1] * side * 7.4;
+          const x = A[0] + dir[0] * s + nrm[0] * side * 7.5;
+          const z = A[1] + dir[1] * s + nrm[1] * side * 7.5;
           if (nearStation(x, z)) continue;
           lamps.push(at(x, z, side > 0 ? 0 : Math.PI));
           obstacles.push({ x, z, r: 0.35 });
+          if ((s / 18) % 3 === 1) {
+            const bx = x + dir[0] * 1.6;
+            const bz = z + dir[1] * 1.6;
+            bins.push(at(bx, bz));
+            obstacles.push({ x: bx, z: bz, r: 0.35 });
+          }
         }
       }
       for (let s = 3; s < total - 3; s += 12) {
@@ -272,37 +259,57 @@ export function createCityDecor(
     const host = regions.find((r) => !r.bundle_url && inBox(spawn, r.polygon));
     if (host) {
       const [cx, cz] = spawn;
-      const stone = new MeshStandardMaterial({ color: '#cfc8bb', roughness: 0.8 });
-      const water = new MeshStandardMaterial({ color: '#4c8fc4', roughness: 0.08, metalness: 0.3 });
-      const wood = new MeshStandardMaterial({ color: '#8a5a33', roughness: 0.8 });
-      disposables.push(stone, water, wood);
-      const plaza = new Mesh(new CylinderGeometry(19, 19, 0.06, 48), plazaMat);
-      plaza.position.set(cx, 0.03, cz);
-      plaza.receiveShadow = shadows;
-      root.add(plaza);
+      const stone = kit.material('slab', '#d8d2c6');
+      const water = new MeshStandardMaterial({ color: '#2f5f73', roughness: 0.04, metalness: 0.2, envMapIntensity: 1.4 });
+      const wood = new MeshStandardMaterial({ color: '#7b5434', roughness: 0.75 });
+      const iron = new MeshStandardMaterial({ color: '#2a2f33', roughness: 0.45, metalness: 0.8 });
+      disposables.push(water, wood, iron);
+      const plaza = new CylinderGeometry(19, 19, 0.06, 64).translate(cx, 0.03, cz);
+      surface(plaza, 'paver', '#cfc6b6');
       // Caddeye bağlanan yaya yolu
       const toStreet = nearestStreetZ(lines, cx);
-      if (toStreet !== null) root.add(band([cx, toStreet + 11 * Math.sign(cz - toStreet)], [cx, cz - 19 * Math.sign(cz - toStreet)], 0, 6, 0.04, paving, 2));
-      const part = (geo: CylinderGeometry | BoxGeometry, mat: MeshStandardMaterial, x: number, y: number, z: number, rotY = 0) => {
+      if (toStreet !== null) {
+        const sgn = Math.sign(cz - toStreet);
+        surface(stripGeo([cx, toStreet + 11 * sgn], [cx, cz - 19 * sgn], 0, 6, 0.04), 'paver', '#cfc6b6');
+      }
+      const part = (geo: BufferGeometry, mat: Material, x: number, y: number, z: number, rotY = 0) => {
         const m = new Mesh(geo, mat);
         m.position.set(x, y, z);
         m.rotation.y = rotY;
         m.castShadow = shadows;
         m.receiveShadow = shadows;
+        m.updateMatrixWorld();
         root.add(m);
+        return m;
       };
-      part(new CylinderGeometry(4.2, 4.4, 0.7, 40), stone, cx, 0.35, cz);
-      part(new CylinderGeometry(3.85, 3.85, 0.1, 40), water, cx, 0.62, cz);
-      part(new CylinderGeometry(0.45, 0.6, 2.2, 16), stone, cx, 1.4, cz);
-      part(new CylinderGeometry(1.4, 0.6, 0.35, 24), stone, cx, 2.5, cz);
-      part(new CylinderGeometry(1.25, 1.25, 0.06, 24), water, cx, 2.66, cz);
+      // Fıskiye: taş havuz, su yüzeyi, ayak, kase
+      const basin = part(new CylinderGeometry(4.2, 4.4, 0.7, 48), stone, cx, 0.35, cz);
+      applyWorldUv(basin.geometry, basin.matrixWorld, 'slab');
+      part(new CylinderGeometry(3.85, 3.85, 0.1, 48), water, cx, 0.6, cz);
+      part(new CylinderGeometry(0.45, 0.6, 2.2, 20), stone, cx, 1.4, cz);
+      part(new CylinderGeometry(1.4, 0.6, 0.35, 32), stone, cx, 2.5, cz);
+      part(new CylinderGeometry(1.25, 1.25, 0.06, 32), water, cx, 2.66, cz);
       obstacles.push({ x: cx, z: cz, r: 4.6 });
       for (let k = 0; k < 6; k++) {
         const a = (k / 6) * Math.PI * 2 + Math.PI / 6;
         const bx = cx + Math.cos(a) * 9;
         const bz = cz + Math.sin(a) * 9;
-        part(new BoxGeometry(2.2, 0.12, 0.6), wood, bx, 0.5, bz, -a + Math.PI / 2);
-        part(new BoxGeometry(2.0, 0.45, 0.4), stone, bx, 0.22, bz, -a + Math.PI / 2);
+        const rot = -a + Math.PI / 2;
+        // Bank: çıta oturak, arkalık, iki dökme ayak
+        const seat = new Group();
+        for (let sl = 0; sl < 4; sl++) seat.add(new Mesh(new BoxGeometry(2.0, 0.04, 0.09), wood).translateY(0.46).translateZ(-0.18 + sl * 0.12));
+        for (let sl = 0; sl < 3; sl++) seat.add(new Mesh(new BoxGeometry(2.0, 0.09, 0.03), wood).translateY(0.62 + sl * 0.13).translateZ(-0.3));
+        for (const lx of [-0.85, 0.85]) seat.add(new Mesh(new BoxGeometry(0.06, 0.46, 0.5), iron).translateX(lx).translateY(0.23).translateZ(-0.05));
+        seat.position.set(bx, 0.06, bz);
+        seat.rotation.y = rot;
+        seat.traverse((o) => {
+          const m = o as Mesh;
+          if (m.isMesh) {
+            m.castShadow = shadows;
+            m.receiveShadow = shadows;
+          }
+        });
+        root.add(seat);
         obstacles.push({ x: bx, z: bz, r: 0.9 });
       }
       for (let k = 0; k < 10; k++) {
@@ -317,35 +324,19 @@ export function createCityDecor(
     }
   }
 
-  // Ağaç: gövde + iki taç (düşük çokgen, Kenney üslubuyla uyumlu)
-  const trunkGeo = new CylinderGeometry(0.14, 0.2, 2.2, 7).translate(0, 1.1, 0);
-  const crownGeo = new IcosahedronGeometry(1.5, 0).translate(0, 3.4, 0);
-  const crown2Geo = new IcosahedronGeometry(1.05, 0).translate(0.5, 4.4, 0.2);
-  const trunkMat = new MeshStandardMaterial({ color: '#7a5a3a', roughness: 0.9 });
-  const crownMat = new MeshStandardMaterial({ color: '#4f8a3f', roughness: 0.8, flatShading: true });
-  const crown2Mat = new MeshStandardMaterial({ color: '#5f9c4a', roughness: 0.8, flatShading: true });
-  // Lamba: direk + kol + armatür (kendi ışığı)
-  const poleGeo = new CylinderGeometry(0.07, 0.1, 5, 8).translate(0, 2.5, 0);
-  const armGeo = new BoxGeometry(0.08, 0.08, 1.3).translate(0, 4.9, 0.6);
-  const headGeo = new BoxGeometry(0.34, 0.12, 0.6).translate(0, 4.84, 1.2);
-  const poleMat = new MeshStandardMaterial({ color: '#2b3138', roughness: 0.5, metalness: 0.7 });
-  const headMat = new MeshStandardMaterial({ color: '#fff7e0', emissive: '#ffe7a8', emissiveIntensity: 0.8 });
-  disposables.push(trunkGeo, crownGeo, crown2Geo, trunkMat, crownMat, crown2Mat, poleGeo, armGeo, headGeo, poleMat, headMat);
-  const inst = (geo: BoxGeometry | CylinderGeometry | IcosahedronGeometry, mat: MeshStandardMaterial, mats: Matrix4[], cast: boolean) => {
-    if (!mats.length) return;
-    const m = new InstancedMesh(geo, mat, mats.length);
-    mats.forEach((x, i) => m.setMatrixAt(i, x));
-    m.castShadow = cast && shadows;
-    m.receiveShadow = shadows;
-    m.computeBoundingSphere();
+  for (const [mat, geos] of batches) {
+    const merged = mergeGeometries(geos.map((g) => (g.index ? g.toNonIndexed() : g)));
+    for (const g of geos) g.dispose();
+    if (!merged) continue;
+    const m = new Mesh(merged, mat);
+    m.receiveShadow = true;
+    m.castShadow = shadows && mat === curbMat;
     root.add(m);
-  };
-  inst(trunkGeo, trunkMat, trees, true);
-  inst(crownGeo, crownMat, trees, true);
-  inst(crown2Geo, crown2Mat, trees, true);
-  inst(poleGeo, poleMat, lamps, true);
-  inst(armGeo, poleMat, lamps, false);
-  inst(headGeo, headMat, lamps, false);
+  }
+
+  addTrees(root, trees, shadows, disposables);
+  addStreetFurniture(root, lamps, bins, shadows, disposables);
+  if (opts.skyline) addSkyline(root, bounds, disposables);
 
   return {
     root,
@@ -358,6 +349,195 @@ export function createCityDecor(
       for (const x of disposables) x.dispose();
     },
   };
+}
+
+/**
+ * Ağaç: dallı gövde, koyu iç taç (gölge hacmi) ve dışında yaprak kartları (alfa testli, normaller taç
+ * merkezinden dışa: yumuşak, hacimli ışık). Örnek başına ton farkı (instanceColor).
+ */
+function addTrees(root: Group, trees: Matrix4[], shadows: boolean, disposables: { dispose(): void }[]) {
+  if (!trees.length) return;
+  let seed = 3;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const crownC = new Vector3(0, 4.3, 0);
+
+  const trunkParts: BufferGeometry[] = [new CylinderGeometry(0.13, 0.22, 3.6, 9).translate(0, 1.8, 0)];
+  for (let k = 0; k < 4; k++) {
+    const br = new CylinderGeometry(0.05, 0.09, 1.6, 6).translate(0, 0.8, 0);
+    br.rotateZ(0.7 + rnd() * 0.3);
+    br.rotateY((k / 4) * Math.PI * 2 + rnd());
+    br.translate(0, 2.6 + rnd() * 0.8, 0);
+    trunkParts.push(br);
+  }
+  const trunkGeo = mergeGeometries(trunkParts.map((g) => g.toNonIndexed()))!;
+  for (const g of trunkParts) g.dispose();
+
+  // İç taç: gürültüyle bozulmuş küre
+  const core = new IcosahedronGeometry(1, 3);
+  const pos = core.getAttribute('position');
+  const v = new Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const n = 1 + 0.18 * Math.sin(v.x * 5.1 + v.y * 3.3) * Math.cos(v.z * 4.7 - v.y * 2.1);
+    v.multiplyScalar(n).multiply(new Vector3(1.45, 1.2, 1.45)).add(crownC);
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  core.computeVertexNormals();
+
+  // Yaprak kartları
+  const cards: BufferGeometry[] = [];
+  for (let k = 0; k < 56; k++) {
+    const u = rnd() * 2 - 1;
+    const th = rnd() * Math.PI * 2;
+    const s = Math.sqrt(1 - u * u);
+    const dirV = new Vector3(s * Math.cos(th), u * 0.85 + 0.1, s * Math.sin(th)).normalize();
+    // Kartlar taç yüzeyine ve biraz içine dağılır: iç gövde görünmez, kenar dalgalı kalır
+    const depthK = 0.7 + rnd() * 0.45;
+    const c = crownC.clone().add(dirV.clone().multiply(new Vector3(1.9, 1.55, 1.9)).multiplyScalar(depthK));
+    const size = 1.3 + rnd() * 0.7;
+    const g = new PlaneGeometry(size, size);
+    g.lookAt(dirV.clone().add(new Vector3((rnd() - 0.5) * 1.2, (rnd() - 0.5) * 1.2, (rnd() - 0.5) * 1.2)));
+    g.translate(c.x, c.y, c.z);
+    const p = g.getAttribute('position');
+    const nrm: number[] = [];
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).sub(crownC).normalize();
+      nrm.push(v.x, v.y, v.z);
+    }
+    g.setAttribute('normal', new Float32BufferAttribute(nrm, 3));
+    cards.push(g.toNonIndexed());
+    g.dispose();
+  }
+  const cardGeo = mergeGeometries(cards)!;
+  for (const g of cards) g.dispose();
+
+  const leaves = leafTexture();
+  const trunkMat = new MeshStandardMaterial({ color: '#5e4a3a', roughness: 0.95 });
+  const coreMat = new MeshStandardMaterial({ color: '#33492a', roughness: 0.95 });
+  const leafMat = new MeshStandardMaterial({ map: leaves, alphaTest: 0.45, side: DoubleSide, roughness: 0.85 });
+  disposables.push(trunkGeo, core, cardGeo, leaves, trunkMat, coreMat, leafMat);
+
+  const tint = new Color();
+  const mk = (geo: BufferGeometry, mat: MeshStandardMaterial, cast: boolean, colored: boolean, noAO = false) => {
+    const m = new InstancedMesh(geo, mat, trees.length);
+    trees.forEach((x, i) => {
+      m.setMatrixAt(i, x);
+      if (colored) {
+        const r = ((i * 7919) % 100) / 100;
+        // Doğal ton farkı: zeytin yeşilinden taze yeşile, doygunluk düşük
+        tint.setHSL(0.17 + r * 0.08, 0.18 + r * 0.12, 0.5 + r * 0.1);
+        m.setColorAt(i, tint.multiplyScalar(1.45));
+      }
+    });
+    m.castShadow = cast && shadows;
+    m.receiveShadow = shadows;
+    m.userData.noAO = noAO;
+    m.computeBoundingSphere();
+    root.add(m);
+  };
+  mk(trunkGeo, trunkMat, true, false);
+  mk(core, coreMat, true, false);
+  mk(cardGeo, leafMat, true, true, true);
+}
+
+/** Lamba (dökme taban, konik direk, kol, armatür) ve çöp kutusu */
+function addStreetFurniture(root: Group, lamps: Matrix4[], bins: Matrix4[], shadows: boolean, disposables: { dispose(): void }[]) {
+  const base = new CylinderGeometry(0.16, 0.22, 0.6, 12).translate(0, 0.3, 0);
+  const pole = new CylinderGeometry(0.055, 0.1, 6.2, 12).translate(0, 3.1, 0);
+  const arm = new CylinderGeometry(0.035, 0.045, 1.7, 8).rotateX(Math.PI / 2 - 0.12).translate(0, 6.15, 0.8);
+  const lampGeo = mergeGeometries([base.toNonIndexed(), pole.toNonIndexed(), arm.toNonIndexed()])!;
+  base.dispose();
+  pole.dispose();
+  arm.dispose();
+  const headGeo = new BoxGeometry(0.32, 0.1, 0.7).translate(0, 6.22, 1.62);
+  const lensGeo = new BoxGeometry(0.26, 0.02, 0.6).translate(0, 6.16, 1.62);
+  const binGeo = mergeGeometries([new CylinderGeometry(0.26, 0.24, 0.85, 14).translate(0, 0.5, 0).toNonIndexed(), new CylinderGeometry(0.04, 0.04, 0.1, 6).translate(0, 0.05, 0).toNonIndexed()])!;
+  const metal = new MeshStandardMaterial({ color: '#2a3036', roughness: 0.42, metalness: 0.75 });
+  const lens = new MeshStandardMaterial({ color: '#e9eef2', roughness: 0.2, metalness: 0.1, emissive: '#fff2d0', emissiveIntensity: 0.05 });
+  const binMat = new MeshStandardMaterial({ color: '#3d4a42', roughness: 0.55, metalness: 0.5 });
+  disposables.push(lampGeo, headGeo, lensGeo, binGeo, metal, lens, binMat);
+  const inst = (geo: BufferGeometry, mat: MeshStandardMaterial, mats: Matrix4[], cast: boolean) => {
+    if (!mats.length) return;
+    const m = new InstancedMesh(geo, mat, mats.length);
+    mats.forEach((x, i) => m.setMatrixAt(i, x));
+    m.castShadow = cast && shadows;
+    m.receiveShadow = shadows;
+    m.computeBoundingSphere();
+    root.add(m);
+  };
+  inst(lampGeo, metal, lamps, true);
+  inst(headGeo, metal, lamps, true);
+  inst(lensGeo, lens, lamps, false);
+  inst(binGeo, binMat, bins, true);
+}
+
+/**
+ * Ufuk silüeti: şehir sınırının 70–230 m dışında, sisle kaybolan kule ve bloklar. Cephe dokusu dünya
+ * koordinatından döşenir (kutu boyu ne olursa olsun kat yüksekliği 3 m kalır); çatılar düz gri.
+ */
+function addSkyline(root: Group, bounds: { min: V2; max: V2 }, disposables: { dispose(): void }[]) {
+  let seed = 97;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const bases = ['#b9b4ac', '#9fa6ad', '#c8c0b3', '#8e9499'];
+  const geo = new BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+  disposables.push(geo);
+  const [x0, z0] = bounds.min;
+  const [x1, z1] = bounds.max;
+  const groups: Matrix4[][] = bases.map(() => []);
+  const colors: Color[][] = bases.map(() => []);
+  for (let k = 0; k < 160; k++) {
+    // Sınır dikdörtgeninin çevresinde rastgele bir nokta, dışa doğru 70–230 m
+    const side = Math.floor(rnd() * 4);
+    const t = rnd();
+    const out = 70 + rnd() * 160;
+    const x = side < 2 ? x0 - 150 + t * (x1 - x0 + 300) : side === 2 ? x0 - out : x1 + out;
+    const z = side === 0 ? z0 - out : side === 1 ? z1 + out : z0 - 150 + t * (z1 - z0 + 300);
+    const tall = rnd() < 0.2;
+    const h = tall ? 45 + rnd() * 60 : 12 + rnd() * 26;
+    const w = 14 + rnd() * 22;
+    const d = 14 + rnd() * 22;
+    const g = Math.floor(rnd() * bases.length);
+    groups[g]!.push(new Matrix4().compose(new Vector3(x, 0, z), new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.floor(rnd() * 2) * (Math.PI / 2)), new Vector3(w, h, d)));
+    colors[g]!.push(new Color().setHSL(0.08, 0.05, 0.85 + rnd() * 0.2));
+  }
+  bases.forEach((b, gi) => {
+    if (!groups[gi]!.length) return;
+    const tex = facadeTexture(101 + gi, b);
+    const mat = new MeshStandardMaterial({ map: tex, roughness: 0.75, metalness: 0.05 });
+    mat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vFacadeUv;\nvarying float vRoof;')
+        .replace(
+          '#include <project_vertex>',
+          `#include <project_vertex>
+          vec4 fwp = vec4(transformed, 1.0);
+          vec3 fn = objectNormal;
+          #ifdef USE_INSTANCING
+            fwp = instanceMatrix * fwp;
+            fn = mat3(instanceMatrix) * fn;
+          #endif
+          fwp = modelMatrix * fwp;
+          fn = normalize(mat3(modelMatrix) * fn);
+          vRoof = step(0.5, fn.y);
+          vFacadeUv = (abs(fn.x) > 0.5 ? vec2(fwp.z, fwp.y) : vec2(fwp.x, fwp.y)) / vec2(12.0, 12.0);`,
+        );
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vFacadeUv;\nvarying float vRoof;')
+        .replace(
+          '#include <map_fragment>',
+          ShaderChunk.map_fragment.replace('texture2D( map, vMapUv )', 'mix(texture2D( map, vFacadeUv ), vec4(0.42, 0.42, 0.44, 1.0), vRoof)'),
+        );
+    };
+    const m = new InstancedMesh(geo, mat, groups[gi]!.length);
+    groups[gi]!.forEach((x, i) => {
+      m.setMatrixAt(i, x);
+      m.setColorAt(i, colors[gi]![i]!);
+    });
+    m.computeBoundingSphere();
+    m.userData.noAO = true;
+    root.add(m);
+    disposables.push(tex, mat);
+  });
 }
 
 /**

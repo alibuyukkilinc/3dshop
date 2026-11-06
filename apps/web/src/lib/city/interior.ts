@@ -98,9 +98,10 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
   const own = <T extends { dispose(): void }>(x: T) => (disposables.push(x), x);
   const { width: W, depth: D } = layout;
 
-  // Işık: iç mekân aydınlık ve gölgesiz (performans); tavandan hafif yönlü ışık hacim verir
-  scene.add(new HemisphereLight('#ffffff', '#d8d2c8', 1.7));
-  const key = new DirectionalLight('#fffaf0', 1.1);
+  // Işık: iç mekân aydınlık ve gölgesiz (performans); tavandan yönlü ışık hacim verir. Yarıküre ölçülü:
+  // fazlası her yüzü eşitleyip sahneyi düzleştirir (yüksek kalitede derinliği ortam kapanması da verir)
+  scene.add(new HemisphereLight('#ffffff', '#b9b0a2', 1.05));
+  const key = new DirectionalLight('#fffaf0', 1.6);
   key.position.set(4, 10, 3);
   scene.add(key);
 

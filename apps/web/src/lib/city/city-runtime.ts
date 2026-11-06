@@ -11,18 +11,22 @@ import {
   Mesh,
   MeshStandardMaterial,
   type Object3D,
-  PCFSoftShadowMap,
+  PCFShadowMap,
   PerspectiveCamera,
   Raycaster,
   Scene,
+  type Texture,
   Vector2,
   Vector3,
   WebGLRenderer,
 } from 'three';
-import { type CityDecor, SKY, applyEnvironment, createCityDecor, createSky, createStoreSign } from './environment';
+import { type CityDecor, createCityDecor, createStoreSign } from './environment';
 import { type Interior, type InteriorData, buildInterior } from './interior';
 import { type Obstacle, type V2, rideAt, step } from './movement';
+import { PostFx } from './postfx';
 import type { QualitySettings } from './quality';
+import { SKY, SUN_DIR, bakeSkyEnvironment, createSkyDome } from './sky';
+import { type AtlasCache, type SurfaceKit, createAtlasCache, createSurfaceKit, enhanceRegion } from './surfaces';
 
 export interface Manifest {
   world: { slug: string; name: string };
@@ -88,9 +92,13 @@ export class CityRuntime {
   private currentRegion: string | null = null;
   private readonly bounds: { min: V2; max: V2 };
   private disposed = false;
-  private readonly sky: Mesh;
+  private readonly sky: ReturnType<typeof createSkyDome>;
   private readonly decor: CityDecor;
-  private readonly disposeEnv: () => void;
+  private readonly envMap: Texture;
+  private readonly kit: SurfaceKit;
+  private readonly atlas: AtlasCache;
+  private post: PostFx | null = null;
+  private clock = 0;
   private interior: { built: Interior; store: StoreRef; color: string } | null = null;
   private entering = false;
   private nearStore: StoreRef | null = null;
@@ -104,19 +112,26 @@ export class CityRuntime {
     private readonly cb: CityCallbacks,
   ) {
     this.renderer = new WebGLRenderer({ canvas, antialias: settings.dpr > 1, powerPreference: 'high-performance' });
-    this.renderer.shadowMap.type = PCFSoftShadowMap;
+    this.renderer.shadowMap.type = PCFShadowMap;
     // Film tonlaması: güneşli sahnede patlayan beyazlar yumuşar, renkler doygun kalır
     this.renderer.toneMapping = ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.95;
-    this.disposeEnv = applyEnvironment(this.renderer, this.scene);
-    this.sky = createSky(1);
-    this.scene.add(this.sky);
-    this.scene.add(new HemisphereLight('#dceaf7', '#8b8070', 0.8));
-    this.sun = new DirectionalLight('#fff3dc', 2.2);
+    this.renderer.toneMappingExposure = 1.0;
+    // Çizim istatistiği kare başına toplanır (son işlemenin ara geçişleri dahil; stats())
+    this.renderer.info.autoReset = false;
+    // Gerçekçi gökyüzü + ondan pişirilen çevre ışığı: gölgedeki yüzler gökyüzü mavisini, camlar bulutları yansıtır
+    this.envMap = bakeSkyEnvironment(this.renderer);
+    this.scene.environment = this.envMap;
+    this.scene.environmentIntensity = 0.9;
+    this.sky = createSkyDome();
+    this.scene.add(this.sky.mesh);
+    // Çevre haritası ortam ışığını büyük ölçüde verir; yarıküre yalnız yerden sekme sıcaklığı için
+    this.scene.add(new HemisphereLight('#d4e3f5', '#8a7d68', 0.35));
+    this.sun = new DirectionalLight('#fff0d6', 3.0);
     this.sun.shadow.mapSize.set(2048, 2048);
-    this.sun.shadow.bias = -0.0004;
-    this.sun.shadow.normalBias = 0.02;
-    Object.assign(this.sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 200 });
+    this.sun.shadow.bias = -0.0003;
+    this.sun.shadow.normalBias = 0.03;
+    this.sun.shadow.radius = 3;
+    Object.assign(this.sun.shadow.camera, { left: -55, right: 55, top: 55, bottom: -55, near: 1, far: 220 });
     this.scene.add(this.sun, this.sun.target);
     this.pos = [manifest.spawn[0], manifest.spawn[2]];
     const xs = manifest.regions.flatMap((r) => r.polygon.map((p) => p[0]));
@@ -124,7 +139,12 @@ export class CityRuntime {
     this.bounds = xs.length ? { min: [Math.min(...xs), Math.min(...zs)], max: [Math.max(...xs), Math.max(...zs)] } : { min: [-200, -120], max: [200, 120] };
     this.tram = this.makeTram();
     this.scene.add(this.tram);
-    this.decor = createCityDecor(this.bounds, manifest.regions, manifest.transit_lines, settings.shadows, [manifest.spawn[0], manifest.spawn[2]]);
+    this.kit = createSurfaceKit();
+    this.atlas = createAtlasCache();
+    this.decor = createCityDecor(this.bounds, manifest.regions, manifest.transit_lines, this.kit, { shadows: settings.shadows, skyline: settings.skyline }, [
+      manifest.spawn[0],
+      manifest.spawn[2],
+    ]);
     this.scene.add(this.decor.root);
     this.obstacles.push(...this.decor.obstacles);
     this.applySettings(settings);
@@ -152,11 +172,26 @@ export class CityRuntime {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, s.dpr));
     this.renderer.shadowMap.enabled = s.shadows;
     this.sun.castShadow = s.shadows;
-    this.scene.fog = new Fog(SKY.horizon, s.fog * 0.55, s.fog);
+    // Hava perspektifi: sis ufuk rengine birleşir; uzak silüet binaları pusa gömülür
+    this.scene.fog = new Fog(SKY.horizon, s.fog * 0.5, s.fog);
     this.camera.far = s.fog + 20;
     // Gök kubbesi görüş uzaklığının hemen içinde (kameraya bağlı, sise girmez)
-    this.sky.scale.setScalar(s.fog + 5);
+    this.sky.mesh.scale.setScalar(s.fog + 5);
     this.camera.updateProjectionMatrix();
+    if (s.post && !this.post) {
+      this.post = new PostFx(this.renderer, this.scene, this.camera);
+      this.resize();
+    } else if (!s.post && this.post) {
+      this.post.dispose();
+      this.post = null;
+    }
+  }
+
+  /** Şehir ya da iç mekân karesi: yüksek kalitede son işlemeden geçer */
+  private draw(scene: Scene, dt: number) {
+    this.renderer.info.reset();
+    if (this.post) this.post.render(scene, this.camera, dt);
+    else this.renderer.render(scene, this.camera);
   }
 
   /** Dokunmatik joystick girdisi (−1…1) */
@@ -218,7 +253,11 @@ export class CityRuntime {
     }
     this.interior?.built.dispose();
     this.decor.dispose();
-    this.disposeEnv();
+    this.post?.dispose();
+    this.sky.dispose();
+    this.kit.dispose();
+    this.atlas.dispose();
+    this.envMap.dispose();
     this.renderer.dispose();
   }
 
@@ -265,6 +304,10 @@ export class CityRuntime {
       this.scene.add(root);
       this.cb.onBundles([...this.regions.values()].flatMap((r) => (r.bundle ? [r.bundle] : [])));
       await built.ready;
+      if (this.disposed) return;
+      // Düz renkli cadde/kaldırım/zemin dokulu yüzey olur, model camları gökyüzünü yansıtır
+      const prims = doc.nodes.filter((n) => n.components.some((c) => c.type === 'primitive')).flatMap((n) => built.nodes.get(n.id) ?? []);
+      enhanceRegion(root, prims, this.kit, this.atlas);
       this.addObstacles(built, doc, bundle.stores);
       this.addStoreSigns(entry, built, doc, bundle);
       this.checkStores(false);
@@ -344,10 +387,17 @@ export class CityRuntime {
     }
     this.camera.position.set(this.pos[0], this.debugEye, this.pos[1]);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
-    this.sky.position.copy(this.camera.position);
-    this.sun.position.set(this.pos[0] + 45, 70, this.pos[1] + 35);
-    this.sun.target.position.set(this.pos[0], 0, this.pos[1]);
-    this.renderer.render(this.scene, this.camera);
+    this.sky.mesh.position.copy(this.camera.position);
+    this.clock += dt;
+    this.sky.tick(this.clock);
+    // Gölge kamerası oyuncunun 15 m önüne odaklanır: bakılan yerde gölge çözünürlüğü yüksek kalır.
+    // Adım gölge dokusu pikseline yuvarlanır: yürürken gölge kenarları titremez.
+    const snap = 110 / 2048;
+    const fx = Math.round((this.pos[0] - Math.sin(this.yaw) * 15) / snap) * snap;
+    const fz = Math.round((this.pos[1] - Math.cos(this.yaw) * 15) / snap) * snap;
+    this.sun.position.set(fx + SUN_DIR.x * 110, SUN_DIR.y * 110, fz + SUN_DIR.z * 110);
+    this.sun.target.position.set(fx, 0, fz);
+    this.draw(this.scene, dt);
     this.sampleFps(now);
     this.raf = requestAnimationFrame(this.loop);
   };
@@ -432,7 +482,7 @@ export class CityRuntime {
     it.built.update(this.pos[0], this.pos[1]);
     this.camera.position.set(this.pos[0], 1.6, this.pos[1]);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
-    this.renderer.render(it.built.scene, this.camera);
+    this.draw(it.built.scene, dt);
   }
 
   private streamAt = 0;
@@ -534,6 +584,7 @@ export class CityRuntime {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h, false);
+    this.post?.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   };
