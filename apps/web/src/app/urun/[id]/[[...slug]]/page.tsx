@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, permanentRedirect } from 'next/navigation';
+import { TrackOnMount } from '../../../../components/analytics';
 import { PriceTag } from '../../../../components/price-tag';
 import { NotFound, type Product, apiGet } from '../../../../lib/api';
 import { formatMinor, minorToDecimal, productPath, slug as toSlug, timeAgo } from '../../../../lib/format';
@@ -63,6 +64,7 @@ export default async function ProductPage({ params }: { params: Params }) {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
+      <TrackOnMount name="product_view" props={{ product_id: p.id, store_id: p.store.id, surface: '2d' }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
       <nav aria-label="Konum" className="text-sm text-muted">
         <Link href="/" className="hover:underline">

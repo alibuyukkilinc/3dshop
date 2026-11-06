@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { TrackOnMount } from '../../../components/analytics';
 import { notFound } from 'next/navigation';
 import { ProductCard } from '../../../components/product-card';
 import { NotFound, type ProductPage, type StoreDetail, apiGet } from '../../../lib/api';
@@ -70,6 +71,7 @@ export default async function StorePage({ params, searchParams }: { params: Para
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
+      <TrackOnMount name="store_enter" props={{ store_id: store.id, surface: '2d' }} />
       <nav aria-label="Konum" className="text-sm text-muted">
         <Link href="/" className="hover:underline">
           Mağazalar

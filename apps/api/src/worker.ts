@@ -17,7 +17,7 @@ import { AlertMailer, AlertService, ErrorReporter, OpsWorkerModule } from './mod
 import { OutboxRelay, PlatformModule } from './modules/platform/public/index.js';
 import { AssetsModule, AssetsService } from './modules/assets/public/index.js';
 import { BundlesService, DeliveryEventHandler, DeliveryModule } from './modules/delivery/public/index.js';
-import { AnalyticsModule, ConversionEventHandler } from './modules/analytics/public/index.js';
+import { AnalyticsModule, ConversionEventHandler, EventsService } from './modules/analytics/public/index.js';
 import { PlacementEventHandler, PlacementModule, PlacementService } from './modules/placement/public/index.js';
 import { ChangesetsService, PublishingModule } from './modules/publishing/public/index.js';
 import { RulesModule, VisibilityEventHandler, VisibilityService } from './modules/rules/public/index.js';
@@ -74,6 +74,19 @@ async function bootstrap() {
     }
   };
   await maintenance();
+  // Platform olayları (K37): bölümler, 13 ay saklama, günlük özet (bugün + dün). Saatte bir.
+  const events = app.get(EventsService);
+  const eventsJob = async () => {
+    try {
+      const dropped = await events.maintainPartitions();
+      if (dropped.length) logger.log(`Saklama süresi dolan olay bölümleri silindi: ${dropped.join(', ')}`);
+      await events.summarizeRecent();
+    } catch (e) {
+      await reporter.report(e, 'job', { job: 'analytics_events' });
+    }
+  };
+  void eventsJob();
+  const eventsTimer = setInterval(() => void eventsJob(), HOURLY_MS);
   // Görünürlük tam hesabı: açılışta ve saatte bir (kural geçerlilik sınırları, kaçan olaylar). Gece fark raporu
   // ayrıca gerekmez: tam hesap değişen her hedef için rules.visibility.changed üretir.
   const fullVisibility = () => visibility.recompute({ all: true }).catch((e) => reporter.report(e, 'job', { job: 'visibility_full' }));
@@ -200,6 +213,7 @@ Site ${site.circuitOpenUntil?.toISOString() ?? '-'} zamanına kadar bekletiliyor
   const stop = () => {
     stopping = true;
     clearInterval(maintenanceTimer);
+    clearInterval(eventsTimer);
     clearInterval(nightly);
     if (syncTimer) clearInterval(syncTimer);
     clearInterval(webhookTimer);

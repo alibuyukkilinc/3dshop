@@ -34,3 +34,35 @@ model Conversion {
   @@map("conversions")
   @@schema("analytics")
 }
+
+/// Platform olayı (K37): aylık bölümlü (ham SQL göçünde), 13 ay saklanır. Sözlük @dtd/contracts ANALYTICS_EVENTS.
+/// Kişisel veri yok: session_id tarayıcı oturumluk rastgele UUID (yalnız rızayla), IP/kullanıcı tutulmaz.
+model AnalyticsEvent {
+  id         String   @db.Uuid
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz(3)
+  sessionId  String   @map("session_id") @db.Uuid
+  name       String
+  storeId    String?  @map("store_id") @db.Uuid
+  productId  String?  @map("product_id") @db.Uuid
+  props      Json
+
+  @@id([id, occurredAt])
+  @@index([name, occurredAt])
+  @@index([productId, occurredAt])
+  @@map("events")
+  @@schema("analytics")
+}
+
+/// Günlük özet (K37): ham olaylar silinse de kalır. Worker gün gün yeniden hesaplar (sil + ekle).
+model AnalyticsEventDaily {
+  day       DateTime @db.Date
+  name      String
+  /// '' = tümü; ürün/mağaza kırılımı varsa kimlik
+  subject   String   @default("")
+  events    Int
+  sessions  Int
+
+  @@id([day, name, subject])
+  @@map("event_daily")
+  @@schema("analytics")
+}

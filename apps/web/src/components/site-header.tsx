@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { ConsentSettingsButton } from './analytics';
 
 export function SiteHeader() {
   return (
@@ -47,9 +48,15 @@ export function SiteHeader() {
 export function SiteFooter() {
   return (
     <footer className="mt-16 border-t border-line">
-      <p className="mx-auto max-w-6xl px-4 py-6 text-xs text-muted">
-        Ürün, fiyat ve stok bilgileri mağazaların kendi sitelerinden alınır. Satın alma mağazanın sitesinde tamamlanır.
-      </p>
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-xs text-muted">
+        <p>Ürün, fiyat ve stok bilgileri mağazaların kendi sitelerinden alınır. Satın alma mağazanın sitesinde tamamlanır.</p>
+        <p className="flex gap-4">
+          <Link href="/cerez-politikasi" className="underline hover:no-underline">
+            Çerez aydınlatma metni
+          </Link>
+          <ConsentSettingsButton />
+        </p>
+      </div>
     </footer>
   );
 }

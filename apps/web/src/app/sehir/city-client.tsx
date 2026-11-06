@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { type Bundle, CityRuntime, type Manifest } from '../../lib/city/city-runtime';
 import { type Quality, SETTINGS, degrade, guessQuality, webglAvailable } from '../../lib/city/quality';
+import { track } from '../../lib/analytics/client';
 import { formatMinor } from '../../lib/format';
 
 interface ProductInfo {
@@ -62,7 +63,11 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
         setManifest(m);
         const rt = new CityRuntime(canvasRef.current, m, SETTINGS[q], {
           onProduct: (id) => void openProduct(id),
-          onRegion: setRegion,
+          onRegion: (name) => {
+            setRegion(name);
+            const r = name ? m.regions.find((x) => x.name === name) : undefined;
+            if (r) track('region_enter', { world: worldSlug, region: r.slug });
+          },
           onBundles: setBundles,
           onRide: setRiding,
           onFps: (fps) => {
@@ -77,6 +82,7 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
         });
         runtimeRef.current = rt;
         setPhase({ kind: 'ready' });
+        track('world_enter', { world: worldSlug, quality: q });
       })
       .catch(() => setPhase({ kind: 'error', message: 'Şehir yüklenemedi.' }));
     return () => {
@@ -100,6 +106,7 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
         fetch(`/api/v1/live/prices?ids=${id}`).then((r) => (r.ok ? r.json() : { items: [] })),
       ]);
       if (!p) return;
+      track('product_view', { product_id: p.id, surface: '3d' });
       const l = (live as { items: { price: ProductInfo['price']; in_stock: boolean }[] }).items[0];
       setProduct({ ...p, price: l?.price ?? p.price, in_stock: l?.in_stock ?? p.in_stock });
     } catch {

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { TrackOnMount } from '../../components/analytics';
 import { ProductCard } from '../../components/product-card';
 import { type ProductCard as Card, apiGet } from '../../lib/api';
 
@@ -25,6 +26,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
+      {r && page === 1 && <TrackOnMount name="search" props={{ q, results: r.total }} />}
       <h1 className="text-2xl font-semibold">{q ? `“${q}” için sonuçlar` : 'Ürün ara'}</h1>
       {r && <p className="mt-1 text-sm text-muted">{r.total} ürün</p>}
       {r && r.items.length === 0 && <p className="mt-6 text-muted">Sonuç bulunamadı. Daha kısa ya da farklı bir kelime deneyin.</p>}
