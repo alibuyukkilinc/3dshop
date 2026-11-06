@@ -5,6 +5,7 @@ import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infra/db/prisma.service.js';
 import { type AdminContext, conflict, notFound } from '../../../infra/http/admin-request.js';
 import { AuditWriter } from '../../audit/public/index.js';
+import { WorldService } from '../../world/public/index.js';
 import { assetVersionIds, documentChecksum, indexNodes } from '../domain/scene-index.js';
 
 export type OwnerType = 'world' | 'region' | 'store_interior' | 'map';
@@ -32,6 +33,23 @@ const EMPTY: SceneDocument = SceneDocumentSchema.parse({
   ],
 });
 
+function groundFor(b: { min: [number, number]; max: [number, number] }): SceneDocument {
+  const cx = (b.min[0] + b.max[0]) / 2;
+  const cz = (b.min[1] + b.max[1]) / 2;
+  return SceneDocumentSchema.parse({
+    ...EMPTY,
+    nodes: EMPTY.nodes.map((n) =>
+      n.id === 'zemin'
+        ? {
+            ...n,
+            transform: { ...n.transform, p: [cx, 0, cz] },
+            components: [{ type: 'primitive', shape: 'plane', size: [b.max[0] - b.min[0], b.max[1] - b.min[1]], material: { color: '#9aa39a' }, castShadow: false }],
+          }
+        : n,
+    ),
+  });
+}
+
 const invalid = (errors: string[]) =>
   new HttpException({ error: 'invalid_scene', message: errors.slice(0, 5).join(' '), errors }, HttpStatus.UNPROCESSABLE_ENTITY);
 
@@ -44,6 +62,7 @@ export class ScenesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditWriter,
+    private readonly world: WorldService,
   ) {}
 
   async list(owner?: { type: OwnerType; id: string }) {
@@ -68,9 +87,12 @@ export class ScenesService {
     const existing = await this.prisma.scene.findUnique({ where: { ownerType_ownerId: { ownerType: owner.type, ownerId: owner.id } } });
     if (existing) return { id: existing.id, created: false };
     const id = uuidv7();
+    // Bölge sahnesi dünya koordinatındadır: başlangıç zemini bölgenin sınırına oturur
+    const bounds = owner.type === 'region' ? await this.world.regionBounds(owner.id) : null;
+    const initial = bounds ? groundFor(bounds) : EMPTY;
     await this.prisma.$transaction(async (tx) => {
       await tx.scene.create({ data: { id, ownerType: owner.type, ownerId: owner.id, name } });
-      await this.writeVersion(tx, id, 1, EMPTY, 'Boş başlangıç', ctx.actor.id);
+      await this.writeVersion(tx, id, 1, initial, 'Boş başlangıç', ctx.actor.id);
       await this.audit.write(tx, {
         actor: ctx.actor,
         action: 'scene.scene.created',

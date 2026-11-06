@@ -1,6 +1,7 @@
 import type { SceneDocument, Vec3 } from '@dtd/scene-runtime';
 import { PCFShadowMap, PerspectiveCamera, WebGLRenderer } from 'three';
 import { type BuiltScene, buildScene } from './build-scene.js';
+import type { Lod, MeshLoader } from './mesh-loader.js';
 
 /**
  * Tarayıcı görünümü: tuval, renderer, kamera ve döngü (K63). Kalite profili K12'ye göre dışarıdan verilir.
@@ -10,6 +11,8 @@ export interface ViewOptions {
   shadows: boolean;
   /** Piksel oranı üst sınırı (düşük cihazda 1) */
   maxDpr: number;
+  meshLoader?: MeshLoader;
+  autoLod?: Lod;
 }
 
 export interface ViewStats {
@@ -34,7 +37,7 @@ export function createSceneView(canvas: HTMLCanvasElement, doc: SceneDocument, o
   renderer.shadowMap.enabled = opts.shadows;
   renderer.shadowMap.type = PCFShadowMap;
   const camera = new PerspectiveCamera(60, 1, 0.1, 400);
-  const built = buildScene(doc, { shadows: opts.shadows });
+  const built = buildScene(doc, { shadows: opts.shadows, meshLoader: opts.meshLoader, autoLod: opts.autoLod });
 
   const resize = () => {
     const w = canvas.clientWidth || window.innerWidth;

@@ -38,7 +38,8 @@ describe.skipIf(!hasDatabase)('mekân (F3.1, K40)', () => {
     const [city] = (await world.worlds()).filter((w) => w.slug === 'merkez-sehir');
     expect(city!.regions.map((r) => r.slug)).toEqual(['merkez-meydan', 'enerji-carsisi', 'egitim-sokagi']);
     const stations = city!.transit_lines[0]!.stations;
-    const xs = await Promise.all(stations.map(async (id) => (await prisma.placeVirtual.findUniqueOrThrow({ where: { placeId: id } })).x));
+    const xs = await Promise.all(stations.map(async (st) => (await prisma.placeVirtual.findUniqueOrThrow({ where: { placeId: st.place_id } })).x));
+    expect(stations.map((st) => st.name)).toEqual(['Eğitim Sokağı durağı', 'Merkez Meydan durağı', 'Enerji Çarşısı durağı']);
     expect(xs).toEqual([-100, 0, 100]);
     expect(await prisma.fastTravelTarget.count()).toBe(3);
     expect((await prisma.world.findUniqueOrThrow({ where: { slug: 'merkez-sehir' } })).defaultSpawnPlaceId).not.toBeNull();

@@ -70,8 +70,9 @@ const PathLoopSchema = z.object({
 
 const SlotSchema = z.object({ type: z.literal('slot'), slot_id: z.string() });
 /**
- * Dünyadaki bir yere bağlanan çapa (K40): tramvay durağı, mağaza girişi, doğuş noktası, vitrin. ref_id
- * world.places kimliğidir; düğümün dünya konumu o yerin sanal konumudur (editör eşitler).
+ * Dünyadaki bir yere bağlanan çapa (K40): tramvay durağı, mağaza girişi, doğuş noktası, vitrin. ref_id:
+ * station → world.places kimliği; store_entrance → commerce mağaza kimliği; spawn → dünya slug'ı. Sahne
+ * yayınında konumlar world'e bildirilir (giriş yeri ve harita → vitrin bağı, F4).
  */
 const AnchorSchema = z.object({
   type: z.literal('anchor'),

@@ -18,7 +18,8 @@
     "postinstall": "prisma generate",
     "sources": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/sources.ts",
     "world": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/world.ts",
-    "assets-import": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/assets-import.ts"
+    "assets-import": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/assets-import.ts",
+    "scenes-seed": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/scenes-seed.ts"
   },
   "dependencies": {
     "@dtd/contracts": "workspace:*",

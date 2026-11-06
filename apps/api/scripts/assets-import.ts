@@ -27,6 +27,8 @@ const { values } = parseArgs({
     'source-url': { type: 'string' },
     attribution: { type: 'string' },
     tags: { type: 'string', default: '' },
+    /** Modelin birimi metre değilse yerleştirme ölçeği (Kenney: 10) — "scale:10" etiketi olarak saklanır */
+    scale: { type: 'string' },
     verify: { type: 'boolean', default: false },
   },
 });
@@ -44,7 +46,7 @@ const assets = app.get(AssetsService);
 const prisma = app.get(PrismaService);
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const ctx = { actor: { type: 'system' as const, id: 'assets-import' }, requestId: null, ipHash: null };
-const baseTags = values.tags!.split(',').map((t) => t.trim()).filter(Boolean);
+const baseTags = [...values.tags!.split(',').map((t) => t.trim()).filter(Boolean), ...(values.scale ? [`scale:${Number(values.scale)}`] : [])];
 let done = 0;
 let skipped = 0;
 try {

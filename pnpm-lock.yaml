@@ -38,6 +38,12 @@ importers:
       '@dtd/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@dtd/engine-three':
+        specifier: workspace:*
+        version: link:../../packages/engine-three
+      '@dtd/scene-runtime':
+        specifier: workspace:*
+        version: link:../../packages/scene-runtime
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -56,6 +62,9 @@ importers:
       tailwind-merge:
         specifier: ^3.3.1
         version: 3.7.0
+      three:
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       '@dtd/config':
         specifier: workspace:*
@@ -78,6 +87,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.0
         version: 19.3.0(@types/react@19.3.0)
+      '@types/three':
+        specifier: 0.186.0
+        version: 0.186.0
       '@vitejs/plugin-react':
         specifier: ^6.0.0
         version: 6.2.1(vite@8.3.6(@types/node@24.19.2)(jiti@2.7.0))

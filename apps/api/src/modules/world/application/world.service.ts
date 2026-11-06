@@ -123,6 +123,8 @@ export class WorldService {
       orderBy: { slug: 'asc' },
       include: { regions: { orderBy: { sort: 'asc' } }, transitLines: { include: { stations: { orderBy: { sort: 'asc' } } } } },
     });
+    const placeIds = rows.flatMap((w) => w.transitLines.flatMap((l) => l.stations.map((s) => s.placeId)));
+    const names = new Map((await this.prisma.place.findMany({ where: { id: { in: placeIds } }, select: { id: true, name: true } })).map((p) => [p.id, p.name]));
     return rows.map((w) => ({
       id: w.id,
       slug: w.slug,
@@ -132,7 +134,13 @@ export class WorldService {
       bounds: w.bounds,
       scene_id: w.sceneId,
       regions: w.regions.map((r) => ({ id: r.id, slug: r.slug, name: r.name, kind: r.kind, polygon: r.polygon, scene_id: r.sceneId })),
-      transit_lines: w.transitLines.map((l) => ({ id: l.id, code: l.code, name: l.name, path: l.path, stations: l.stations.map((s) => s.placeId) })),
+      transit_lines: w.transitLines.map((l) => ({
+        id: l.id,
+        code: l.code,
+        name: l.name,
+        path: l.path,
+        stations: l.stations.map((s) => ({ place_id: s.placeId, name: names.get(s.placeId) ?? '' })),
+      })),
     }));
   }
 
@@ -172,6 +180,16 @@ export class WorldService {
       .map((b) => ({ ...b, distance_km: Math.round(haversineKm(lat, lng, b.geo!.lat, b.geo!.lng) * 10) / 10 }))
       .filter((b) => b.distance_km <= km)
       .sort((a, b) => a.distance_km - b.distance_km);
+  }
+
+  /** Bölgenin x-z sınır kutusu (sahne zemini ve editör odağı). */
+  async regionBounds(regionId: string): Promise<{ min: [number, number]; max: [number, number] } | null> {
+    const r = await this.prisma.region.findUnique({ where: { id: regionId }, select: { polygon: true } });
+    const pts = (r?.polygon as [number, number][] | undefined) ?? [];
+    if (pts.length === 0) return null;
+    const xs = pts.map((p) => p[0]);
+    const zs = pts.map((p) => p[1]);
+    return { min: [Math.min(...xs), Math.min(...zs)], max: [Math.max(...xs), Math.max(...zs)] };
   }
 
   async adminAreas() {

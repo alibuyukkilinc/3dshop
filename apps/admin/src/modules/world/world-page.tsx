@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react';
-import { ApiError } from '../../shared/api';
+import { ApiError, api } from '../../shared/api';
 import { useResource } from '../../shared/data';
 import { Alert, Badge, Button, Field, PageHeader, SelectField } from '../../shared/ui';
 import { openChangeset } from '../publishing/changesets-page';
@@ -11,7 +11,12 @@ interface World {
   type: string;
   status: string;
   regions: { id: string; slug: string; name: string; kind: string; scene_id: string | null }[];
-  transit_lines: { id: string; code: string; name: string; stations: string[] }[];
+  transit_lines: {
+    id: string;
+    code: string;
+    name: string;
+    stations: { place_id: string; name: string }[];
+  }[];
 }
 interface Branch {
   place_id: string;
@@ -43,6 +48,15 @@ const TYPE: Record<string, string> = {
 };
 
 /** Mekân (F3.1): dünyalar, bölgeler, tramvay; şube pinleri (harita). */
+/** Bölgenin sahnesini (yoksa boş başlangıçla) açıp editöre gider. */
+async function openEditor(regionId: string, name: string) {
+  const s = await api<{ id: string }>('/admin/v1/scenes', {
+    method: 'POST',
+    body: { owner_type: 'region', owner_id: regionId, name },
+  });
+  window.location.hash = `#/editor/${s.id}`;
+}
+
 export function WorldPage({ canPrepare }: { canPrepare: boolean }) {
   const worlds = useResource<{ items: World[] }>('/admin/v1/world/worlds');
   const branches = useResource<{ items: Branch[] }>('/admin/v1/world/branches');
@@ -74,7 +88,15 @@ export function WorldPage({ canPrepare }: { canPrepare: boolean }) {
                 {w.regions.map((r) => (
                   <li key={r.id} className="flex items-center gap-2">
                     {r.name} <span className="text-xs text-muted">{r.kind}</span>
-                    {!r.scene_id && <span className="text-xs text-warn">sahne yok</span>}
+                    {canPrepare && (
+                      <button
+                        type="button"
+                        className="ml-auto text-xs text-accent hover:underline"
+                        onClick={() => void openEditor(r.id, r.name)}
+                      >
+                        Sahneyi düzenle
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>

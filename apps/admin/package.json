@@ -11,12 +11,15 @@
   },
   "dependencies": {
     "@dtd/contracts": "workspace:*",
+    "@dtd/engine-three": "workspace:*",
+    "@dtd/scene-runtime": "workspace:*",
     "clsx": "^2.1.1",
     "lucide-react": "^0.540.0",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "tailwind-merge": "^3.3.1"
+    "tailwind-merge": "^3.3.1",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@dtd/config": "workspace:*",
@@ -26,6 +29,7 @@
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/three": "0.186.0",
     "@vitejs/plugin-react": "^6.0.0",
     "jsdom": "^30.1.1",
     "tailwindcss": "^4.3.3",

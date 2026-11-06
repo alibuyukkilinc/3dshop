@@ -1,6 +1,6 @@
 import type { AdminMe } from '@dtd/contracts';
 import { LogOut } from 'lucide-react';
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { api } from '../../shared/api';
 import { useRoute } from '../../shared/data';
 import { Button, cn } from '../../shared/ui';
@@ -12,6 +12,9 @@ import { SourcesPage } from '../integration/sources-page';
 import { ChangesetsPage } from '../publishing/changesets-page';
 import { RulesPage } from '../rules/rules-page';
 import { WorldPage } from '../world/world-page';
+
+// Editör Three.js'i getirir: yalnız açılınca yüklenir
+const SceneEditor = lazy(() => import('../editor/scene-editor'));
 
 const NAV = [
   ['/', 'Genel'],
@@ -32,7 +35,8 @@ export function AdminShell({ me, onLoggedOut }: { me: AdminMe; onLoggedOut: () =
 
   let page;
   const csMatch = /^\/changesets(?:\/([0-9a-f-]{36}))?$/.exec(route);
-  switch (csMatch ? '/changesets' : route) {
+  const edMatch = /^\/editor\/([0-9a-f-]{36})$/.exec(route);
+  switch (csMatch ? '/changesets' : edMatch ? '/editor' : route) {
     case '/sources':
       page = <SourcesPage canWrite={canWrite} />;
       break;
@@ -47,6 +51,13 @@ export function AdminShell({ me, onLoggedOut }: { me: AdminMe; onLoggedOut: () =
       break;
     case '/rules':
       page = <RulesPage canWrite={canWrite} canPrepare={canWrite || me.roles.includes('editor')} />;
+      break;
+    case '/editor':
+      page = (
+        <Suspense fallback={<p className="text-sm text-muted">Editör yükleniyor…</p>}>
+          <SceneEditor sceneId={edMatch![1]!} canEdit={canWrite || me.roles.includes('editor')} />
+        </Suspense>
+      );
       break;
     case '/world':
       page = <WorldPage canPrepare={canWrite || me.roles.includes('editor')} />;
@@ -82,7 +93,10 @@ export function AdminShell({ me, onLoggedOut }: { me: AdminMe; onLoggedOut: () =
         <nav aria-label="Bölümler" className="mx-auto max-w-6xl overflow-x-auto px-4">
           <ul className="flex gap-1">
             {NAV.map(([href, label]) => {
-              const active = route === href || (href === '/changesets' && !!csMatch);
+              const active =
+                route === href ||
+                (href === '/changesets' && !!csMatch) ||
+                (href === '/world' && !!edMatch);
               return (
                 <li key={href}>
                   <a

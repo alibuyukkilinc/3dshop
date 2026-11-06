@@ -26,6 +26,7 @@ import {
   type Texture,
   Vector3,
 } from 'three';
+import type { Lod, MeshLoader } from './mesh-loader.js';
 
 /**
  * dtd.scene.v1 → Three.js sahne grafiği (K45, K63). Belge her motor için aynıdır; burası yalnız çevirir.
@@ -35,6 +36,10 @@ export interface BuildOptions {
   shadows: boolean;
   /** Pano dokusu üreticisi; varsayılanı tarayıcıda tuval kullanır (testte değiştirilir) */
   boardTexture?: (board: { title: string; price_text: string; color: string }) => Texture;
+  /** Varlık kütüphanesi modelleri (mesh bileşeni); verilmezse mesh düğümleri boş kalır */
+  meshLoader?: MeshLoader;
+  /** lod_policy 'auto' iken hangi LOD (kalite profili, K12) */
+  autoLod?: Lod;
 }
 
 export interface BuiltScene {
@@ -43,6 +48,8 @@ export interface BuiltScene {
   nodes: Map<string, Object3D>;
   /** Zamanla hareket eden düğümler (tramvay) */
   update(timeS: number): void;
+  /** Tüm mesh yüklemeleri bitince çözülür (editör, ekran görüntüsü, test) */
+  ready: Promise<void>;
   dispose(): void;
 }
 
@@ -66,6 +73,7 @@ export function buildScene(input: SceneDocument, opts: BuildOptions): BuiltScene
   const disposables: { dispose(): void }[] = [];
   const movers: { obj: Object3D; points: [number, number, number][]; speed: number }[] = [];
   const boardTexture = opts.boardTexture ?? canvasBoardTexture;
+  const pending: Promise<void>[] = [];
 
   const material = (m: Material) => {
     const key = JSON.stringify(m);
@@ -127,11 +135,29 @@ export function buildScene(input: SceneDocument, opts: BuildOptions): BuiltScene
       case 'path_loop':
         movers.push({ obj: g, points: c.points, speed: c.speed });
         return;
-      case 'mesh':
+      case 'mesh': {
+        g.userData.mesh = c;
+        if (!opts.meshLoader) return;
+        const lod: Lod = c.lod_policy === 'high' ? 'lod0' : c.lod_policy === 'low' ? 'lod2' : (opts.autoLod ?? 'lod0');
+        pending.push(
+          opts.meshLoader(c.asset_version_id, lod).then((obj) => {
+            if (!obj) return;
+            obj.traverse((o) => {
+              const m = o as Mesh;
+              if (m.isMesh) {
+                m.castShadow = opts.shadows;
+                m.receiveShadow = opts.shadows;
+              }
+            });
+            g.add(obj);
+          }),
+        );
+        return;
+      }
       case 'slot':
       case 'portal':
       case 'anchor':
-        // mesh: varlık kütüphanesi (F3); slot/portal/çapa görünmez işaretlerdir
+        // slot/portal/çapa görünmez işaretlerdir (editör kendi yardımcısını çizer)
         g.userData[c.type] = c;
         return;
     }
@@ -152,6 +178,7 @@ export function buildScene(input: SceneDocument, opts: BuildOptions): BuiltScene
   return {
     scene,
     nodes,
+    ready: Promise.all(pending).then(() => undefined),
     update(timeS) {
       for (const m of movers) m.obj.position.set(...pointOnLoop(m.points, timeS * m.speed));
     },

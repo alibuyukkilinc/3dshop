@@ -20,7 +20,8 @@
     "format": "prettier --write .",
     "sources": "pnpm --filter @dtd/api sources",
     "world": "pnpm --filter @dtd/api world",
-    "assets-import": "pnpm --filter @dtd/api assets-import"
+    "assets-import": "pnpm --filter @dtd/api assets-import",
+    "scenes-seed": "pnpm --filter @dtd/api scenes-seed"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
