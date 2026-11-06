@@ -11,6 +11,8 @@ describe('güvenlik başlıkları (F6.1)', () => {
     expect(csp).toContain("'wasm-unsafe-eval'");
     expect(csp).toContain('https://www.googletagmanager.com');
     expect(csp).toContain('upgrade-insecure-requests');
+    // GLTFLoader GLB içi dokuları blob: adresinden fetch eder; engellenirse binalar dokusuz (gri) kalır
+    expect(csp).toMatch(/connect-src [^;]*blob:/);
   });
 
   it('geliştirmede HMR için eval ve ws; HSTS yok', () => {

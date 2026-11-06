@@ -6,7 +6,7 @@
  *   dinamik yapar ve ISR önbelleğini (revalidate 60) bozar; bilinçli ödünleşim. Dış betik yalnız GA4 (rızayla).
  * - 'wasm-unsafe-eval': 3D modellerdeki Meshopt sıkıştırmasını çözen WebAssembly (F3.2).
  * - img-src https: — ürün görselleri kaynak sitelerin CDN'lerinden gelir (K41); blob: GLB içi dokular.
- * - connect-src: API, bölge paketleri ve varlıklar aynı kaynaktan; GA4 ölçüm uçları.
+ * - connect-src: API, bölge paketleri ve varlıklar aynı kaynaktan; blob:/data: GLB içi dokular (GLTFLoader fetch); GA4.
  */
 const GA = ['https://www.googletagmanager.com', 'https://*.google-analytics.com', 'https://*.analytics.google.com'];
 
@@ -17,7 +17,8 @@ export function contentSecurityPolicy(dev = false): string {
     'style-src': ["'self'", "'unsafe-inline'"],
     'img-src': ["'self'", 'data:', 'blob:', 'https:'],
     'font-src': ["'self'", 'data:'],
-    'connect-src': ["'self'", ...GA, ...(dev ? ['ws:'] : [])],
+    // blob:/data: GLTFLoader model içi dokuları fetch ile okur (connect-src'e tabi)
+    'connect-src': ["'self'", 'blob:', 'data:', ...GA, ...(dev ? ['ws:'] : [])],
     'worker-src': ["'self'", 'blob:'],
     'frame-src': ["'none'"],
     'frame-ancestors': ["'none'"],
