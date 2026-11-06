@@ -15,6 +15,7 @@ import {
 } from './modules/integration/public/index.js';
 import { AlertMailer, AlertService, ErrorReporter, OpsWorkerModule } from './modules/ops/public/index.js';
 import { OutboxRelay, PlatformModule } from './modules/platform/public/index.js';
+import { AssetsModule, AssetsService } from './modules/assets/public/index.js';
 import { ChangesetsService, PublishingModule } from './modules/publishing/public/index.js';
 import { RulesModule, VisibilityEventHandler, VisibilityService } from './modules/rules/public/index.js';
 
@@ -23,7 +24,7 @@ import { RulesModule, VisibilityEventHandler, VisibilityService } from './module
  * işler. Kuyruk (Redis + BullMQ, K34) F0.6'da sunucuya Redis kurulunca eklenir; o zamana kadar outbox
  * yoklamayla teslim edilir.
  */
-@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule, IntegrationModule, RulesModule, PublishingModule] })
+@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule, IntegrationModule, RulesModule, PublishingModule, AssetsModule] })
 class WorkerModule {}
 
 const OUTBOX_POLL_MS = 1_000;
@@ -130,6 +131,21 @@ Site ${site.circuitOpenUntil?.toISOString() ?? '-'} zamanına kadar bekletiliyor
     SYNC_TICK_MS,
   );
 
+  // 3D varlık işleme (F3.2): doğrulama, optimizasyon, LOD
+  const assets = app.get(AssetsService);
+  let processingAssets = false;
+  const assetTimer = setInterval(async () => {
+    if (processingAssets || stopping) return;
+    processingAssets = true;
+    try {
+      await assets.processPending();
+    } catch (e) {
+      await reporter.report(e, 'job', { job: 'asset_processing' });
+    } finally {
+      processingAssets = false;
+    }
+  }, 5_000);
+
   const syncTimer = loadEnv().INTEGRATION_SYNC_ENABLED ? setInterval(() => void syncTick(), SYNC_TICK_MS) : null;
   if (syncTimer) void syncTick();
 
@@ -156,6 +172,7 @@ Site ${site.circuitOpenUntil?.toISOString() ?? '-'} zamanına kadar bekletiliyor
     clearInterval(webhookTimer);
     clearInterval(visibilityTimer);
     clearInterval(publishTimer);
+    clearInterval(assetTimer);
   };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);

@@ -19,7 +19,8 @@
     "admin:create": "pnpm --filter @dtd/api admin:create",
     "format": "prettier --write .",
     "sources": "pnpm --filter @dtd/api sources",
-    "world": "pnpm --filter @dtd/api world"
+    "world": "pnpm --filter @dtd/api world",
+    "assets-import": "pnpm --filter @dtd/api assets-import"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

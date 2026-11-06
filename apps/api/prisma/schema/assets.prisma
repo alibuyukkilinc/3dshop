@@ -1,0 +1,101 @@
+// Modül: modules/assets. 3D varlık kütüphanesi: yükleme, doğrulama, optimizasyon, LOD, lisans (K27, K38, K46).
+// Dosyalar içerik adresli (sha256) depoda; sahneler varlığın belirli sürümüne bağlanır. Cortex: varlik-yonetimi.
+
+model Asset {
+  id                     String         @id @db.Uuid
+  /// building | prop | furniture | product_model | texture | environment
+  kind                   String
+  name                   String
+  tags                   String[]       @default([])
+  ownerCompanyId         String?        @map("owner_company_id") @db.Uuid
+  /// uploaded | processing | ready | rejected | archived
+  status                 String         @default("uploaded")
+  currentVersionId       String?        @map("current_version_id") @db.Uuid
+  /// K46: lisans doğrulanmamışken yayına girebilmesi için yöneticinin gerekçesi (normal kural istisnası)
+  licenseExceptionReason String?        @map("license_exception_reason")
+  licenseExceptionBy     String?        @map("license_exception_by")
+  createdAt              DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  version                Int            @default(1)
+  versions               AssetVersion[]
+  licenses               AssetLicense[]
+
+  @@index([kind, status])
+  @@map("assets")
+  @@schema("assets")
+}
+
+/// Değişmez sürüm: yeni dosya yeni sürümdür.
+model AssetVersion {
+  id               String               @id @db.Uuid
+  assetId          String               @map("asset_id") @db.Uuid
+  asset            Asset                @relation(fields: [assetId], references: [id])
+  number           Int
+  /// uploaded | processing | ready | rejected
+  status           String               @default("uploaded")
+  validationReport Json                 @default("{}") @map("validation_report")
+  /// unknown | verified | rejected
+  licenseStatus    String               @default("unknown") @map("license_status")
+  triangleCount    Int?                 @map("triangle_count")
+  /// {min:[x,y,z], max:[x,y,z]} metre
+  bounds           Json?
+  createdBy        String               @map("created_by")
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  files            AssetFile[]
+  jobs             AssetProcessingJob[]
+
+  @@unique([assetId, number])
+  @@map("asset_versions")
+  @@schema("assets")
+}
+
+model AssetFile {
+  id             String       @id @db.Uuid
+  assetVersionId String       @map("asset_version_id") @db.Uuid
+  version        AssetVersion @relation(fields: [assetVersionId], references: [id])
+  /// source | lod0 | lod1 | lod2 | preview
+  role           String
+  /// İçerik adresi: <sha256>.<uzantı>; depoda ve CDN'de değişmez
+  storageKey     String       @map("storage_key")
+  bytes          Int
+  mime           String
+  sha256         String
+
+  @@unique([assetVersionId, role])
+  @@map("asset_files")
+  @@schema("assets")
+}
+
+model AssetLicense {
+  id          String    @id @db.Uuid
+  assetId     String    @map("asset_id") @db.Uuid
+  asset       Asset     @relation(fields: [assetId], references: [id])
+  /// owned | cc0 | cc_by | commercial | custom
+  licenseType String    @map("license_type")
+  sourceUrl   String?   @map("source_url")
+  attribution String?
+  verifiedBy  String?   @map("verified_by")
+  verifiedAt  DateTime? @map("verified_at") @db.Timestamptz(3)
+  validTo     DateTime? @map("valid_to") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([assetId])
+  @@map("asset_licenses")
+  @@schema("assets")
+}
+
+model AssetProcessingJob {
+  id             String       @id @db.Uuid
+  assetVersionId String       @map("asset_version_id") @db.Uuid
+  version        AssetVersion @relation(fields: [assetVersionId], references: [id])
+  /// pending | running | succeeded | failed
+  status         String       @default("pending")
+  attempts       Int          @default(0)
+  error          String?
+  startedAt      DateTime?    @map("started_at") @db.Timestamptz(3)
+  finishedAt     DateTime?    @map("finished_at") @db.Timestamptz(3)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@map("asset_processing_jobs")
+  @@schema("assets")
+}

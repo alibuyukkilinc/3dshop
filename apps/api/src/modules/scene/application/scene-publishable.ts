@@ -1,6 +1,7 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { z } from 'zod';
 import type { Tx } from '../../../infra/db/types.js';
+import { AssetsService } from '../../assets/public/index.js';
 import { OutboxWriter, type Publishable, type PublishContext, type PublishItem, PublishableRegistry } from '../../platform/public/index.js';
 
 const Payload = z.object({ version_id: z.uuid() }).strict();
@@ -18,6 +19,7 @@ export class ScenePublishable implements Publishable, OnModuleInit {
   constructor(
     private readonly registry: PublishableRegistry,
     private readonly outbox: OutboxWriter,
+    private readonly assets: AssetsService,
   ) {}
 
   onModuleInit() {
@@ -30,7 +32,8 @@ export class ScenePublishable implements Publishable, OnModuleInit {
     if (!p.success) return ['Yayınlanacak sürüm seçilmedi.'];
     const v = await tx.sceneVersion.findUnique({ where: { id: p.data.version_id } });
     if (!v || v.sceneId !== item.entityId) return ['Sürüm bu sahneye ait değil.'];
-    return [];
+    // Varlıklar hazır ve lisansı doğrulanmış (ya da gerekçeli istisnalı) olmalı (K46)
+    return this.assets.publishProblems(v.assetVersionIds);
   }
 
   async snapshot(tx: Tx, entityId: string) {

@@ -21,7 +21,8 @@ export function parseInput<T extends z.ZodType>(schema: T, input: unknown): z.in
 
 /** Yönetim işlemlerinin denetim kaydı bağlamı (K47). */
 export interface AdminContext {
-  actor: { type: 'admin'; id: string };
+  /** Yönetici; CLI ve içe aktarma betiklerinde sistem */
+  actor: { type: 'admin' | 'system'; id: string };
   requestId: string | null;
   ipHash: string | null;
 }

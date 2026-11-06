@@ -22,3 +22,6 @@ Thumbs.db
 
 # Yerel geliştirme test hesapları (asla repoya girmez)
 *.local.*
+
+# Yerel varlık deposu (F3.2, ASSETS_DIR)
+var/

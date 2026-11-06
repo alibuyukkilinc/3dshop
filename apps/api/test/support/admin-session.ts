@@ -20,5 +20,8 @@ export async function adminSession(app: INestApplication, email: string, roles: 
     post: (url: string, body?: object) => send('post', url, body),
     put: (url: string, body?: object) => send('put', url, body),
     patch: (url: string, body?: object) => send('patch', url, body),
+    /** Ham gövde (ör. GLB yüklemesi) */
+    raw: (url: string, body: Buffer, contentType: string) =>
+      agent.post(`/api${url}`).set('Origin', ORIGIN).set('Content-Type', contentType).send(body),
   };
 }

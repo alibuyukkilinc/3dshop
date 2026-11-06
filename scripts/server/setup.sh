@@ -121,8 +121,12 @@ SITE_INDEXABLE=false
 ENV_LABEL=staging
 ALERT_EMAIL_TO=
 RESEND_API_KEY=
+ASSETS_DIR=/srv/dtd/assets
 EOF
 fi
+# 3D varlık deposu (F3.2): içerik adresli dosyalar, depo klasörünün dışında (deploy dokunmaz)
+install -d -o dtd -g dtd -m 750 /srv/dtd/assets
+grep -q '^ASSETS_DIR=' "$APP/.env" || echo 'ASSETS_DIR=/srv/dtd/assets' >>"$APP/.env"
 
 step "Yedek ve geri yükleme provası (cron)"
 cat >/etc/cron.d/dtd-backup <<'EOF'

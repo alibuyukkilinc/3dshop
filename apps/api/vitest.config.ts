@@ -12,5 +12,7 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
     // Her entegrasyon dosyası kendi geçici veritabanını açıp siler
     hookTimeout: 60_000,
+    // Yerel ikili modüller (sharp/libvips) dönüştürülmeden Node ile yüklenir
+    server: { deps: { external: ['sharp', /@img\/sharp/] } },
   },
 });

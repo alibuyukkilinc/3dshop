@@ -14,6 +14,8 @@ export function configureHttp(app: NestExpressApplication, env: Env): void {
   if (env.TRUST_PROXY > 0) app.set('trust proxy', env.TRUST_PROXY);
   app.disable('x-powered-by');
   app.use(cookieParser());
+  // 3D varlık yüklemesi: gövde doğrudan GLB (F3.2); sınır assets LIMITS.maxBytes ile aynı
+  app.useBodyParser('raw', { type: 'model/gltf-binary', limit: '25mb' });
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
