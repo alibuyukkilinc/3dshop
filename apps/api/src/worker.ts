@@ -17,6 +17,7 @@ import { AlertMailer, AlertService, ErrorReporter, OpsWorkerModule } from './mod
 import { OutboxRelay, PlatformModule } from './modules/platform/public/index.js';
 import { AssetsModule, AssetsService } from './modules/assets/public/index.js';
 import { BundlesService, DeliveryEventHandler, DeliveryModule } from './modules/delivery/public/index.js';
+import { AnalyticsModule, ConversionEventHandler } from './modules/analytics/public/index.js';
 import { PlacementEventHandler, PlacementModule, PlacementService } from './modules/placement/public/index.js';
 import { ChangesetsService, PublishingModule } from './modules/publishing/public/index.js';
 import { RulesModule, VisibilityEventHandler, VisibilityService } from './modules/rules/public/index.js';
@@ -26,7 +27,7 @@ import { RulesModule, VisibilityEventHandler, VisibilityService } from './module
  * işler. Kuyruk (Redis + BullMQ, K34) F0.6'da sunucuya Redis kurulunca eklenir; o zamana kadar outbox
  * yoklamayla teslim edilir.
  */
-@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule, IntegrationModule, RulesModule, PublishingModule, AssetsModule, PlacementModule, DeliveryModule] })
+@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule, IntegrationModule, RulesModule, PublishingModule, AssetsModule, PlacementModule, DeliveryModule, AnalyticsModule] })
 class WorkerModule {}
 
 const OUTBOX_POLL_MS = 1_000;
@@ -52,6 +53,8 @@ async function bootstrap() {
   relay.register(app.get(DeliveryEventHandler));
   // Yerleşim: sahne/görünürlük/ürün/kural olayları çalıştırmayı kirli işaretler (K23)
   relay.register(app.get(PlacementEventHandler));
+  // Dönüşüm: kaynak sitenin sipariş olayı yönlendirmeyle eşlenir (K53)
+  relay.register(app.get(ConversionEventHandler));
   const visibility = app.get(VisibilityService);
   process.on('unhandledRejection', (reason) => void reporter.report(reason, 'worker', { kind: 'unhandledRejection' }));
   let stopping = false;

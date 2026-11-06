@@ -1,15 +1,18 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { uuidv7 } from '@dtd/contracts';
+import { toMinor, uuidv7 } from '@dtd/contracts';
 import { loadEnv } from '../../../infra/config/env.js';
 import { decryptSecret, encryptSecret, randomToken } from '../../../infra/crypto/secrets.js';
 import { PrismaService } from '../../../infra/db/prisma.service.js';
 import { type AdminContext, notFound } from '../../../infra/http/admin-request.js';
 import { AuditWriter } from '../../audit/public/index.js';
+import { OutboxWriter } from '../../platform/public/index.js';
 import { isCircuitOpen } from '../domain/circuit.js';
-import { WebhookBodySchema } from '../domain/webhook-payload.js';
+import { type WebhookBody, WebhookBodySchema } from '../domain/webhook-payload.js';
 import { verifyWebhook } from '../domain/webhook-signature.js';
 import { SourceSyncService } from './source-sync.service.js';
 
+/** Sipariş olayı (K53): analytics dönüşüm eşlemesi tüketir */
+export const ORDER_RECEIVED = 'integration.order.received';
 const MAX_ATTEMPTS = 5;
 const BATCH = 50;
 const EVENT_ID_RE = /^[A-Za-z0-9._:-]{8,100}$/;
@@ -29,6 +32,7 @@ export class WebhooksService {
     private readonly prisma: PrismaService,
     private readonly sync: SourceSyncService,
     private readonly audit: AuditWriter,
+    private readonly outbox: OutboxWriter,
   ) {}
 
   async receive(
@@ -67,8 +71,7 @@ export class WebhooksService {
           eventId: headers.eventId,
           event: body.data.event,
           payload: body.data,
-          // Sipariş/dönüşüm analitik modülünde (F5, K53) işlenecek; şimdilik saklanır
-          status: body.data.event === 'order.created' ? 'deferred' : 'pending',
+          status: 'pending',
           receivedAt: now,
         },
       ],
@@ -81,7 +84,8 @@ export class WebhooksService {
   /** Bekleyen ürün olaylarını işler (worker). Aynı ürün bir partide bir kez çekilir. */
   async processPending(): Promise<{ processed: number; failed: number }> {
     const rows = await this.prisma.webhookInbox.findMany({
-      where: { status: 'pending' },
+      // deferred: F5 öncesi saklanan sipariş olayları
+      where: { status: { in: ['pending', 'deferred'] } },
       orderBy: { receivedAt: 'asc' },
       take: BATCH,
       include: { site: true },
@@ -91,8 +95,13 @@ export class WebhooksService {
     const done = new Set<string>();
     for (const row of rows) {
       const site = row.site;
-      if (site.status !== 'active' || !site.credentialsEnc || isCircuitOpen(site.circuitOpenUntil, new Date())) continue;
       const body = WebhookBodySchema.parse(row.payload);
+      if (body.event === 'order.created') {
+        await this.forwardOrder(row, body);
+        processed++;
+        continue;
+      }
+      if (site.status !== 'active' || !site.credentialsEnc || isCircuitOpen(site.circuitOpenUntil, new Date())) continue;
       try {
         for (const externalId of body.product_ids) {
           const key = `${site.id}:${externalId}`;
@@ -116,6 +125,36 @@ export class WebhooksService {
       }
     }
     return { processed, failed };
+  }
+
+  /**
+   * Sipariş olayı (K53): kaynak çağrısı gerekmez; analitik modülüne olayla aktarılır (integration → analytics
+   * bağımlılığı yok, K51). Kişisel veri taşınmaz: yalnız sipariş no, tutar, para birimi, dtd_rid.
+   */
+  private async forwardOrder(row: { id: string; sourceSiteId: string; receivedAt: Date }, body: WebhookBody) {
+    const o = body.order;
+    await this.prisma.$transaction(async (tx) => {
+      if (o) {
+        await this.outbox.append(tx, {
+          type: ORDER_RECEIVED,
+          sourceModule: 'integration',
+          aggregate: { type: 'source_site', id: row.sourceSiteId },
+          actor: { type: 'adapter', id: 'eticaret' },
+          data: {
+            source_site_id: row.sourceSiteId,
+            order_id: o.order_id,
+            amount_minor: o.total === undefined ? null : toMinor(o.total),
+            currency: o.currency?.toUpperCase() ?? null,
+            dtd_rid: o.dtd_rid ?? null,
+            received_at: row.receivedAt.toISOString(),
+          },
+        });
+      }
+      await tx.webhookInbox.update({
+        where: { id: row.id },
+        data: { status: 'processed', processedAt: new Date(), attempts: { increment: 1 }, error: o ? null : 'order alanı yok' },
+      });
+    });
   }
 
   /** Yeni imza sırrı üretir; düz hâli yalnız bu yanıtta döner (kaynak sitenin ayarına girilir). */

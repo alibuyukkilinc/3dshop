@@ -16,6 +16,8 @@ import {
   WebhooksService,
   signWebhook,
 } from '../src/modules/integration/public/index.js';
+import { ConversionEventHandler, RedirectsService } from '../src/modules/analytics/public/index.js';
+import { OutboxRelay } from '../src/modules/platform/public/index.js';
 import { adminSession } from './support/admin-session.js';
 import { ORIGIN } from './support/test-app.js';
 import { type TestDatabase, createTestDatabase, hasDatabase } from './support/test-database.js';
@@ -107,7 +109,7 @@ describe.skipIf(!hasDatabase)('webhook alıcısı (F1.4, B2)', () => {
     expect(await prisma.webhookInbox.count()).toBe(1);
   });
 
-  it('işleyici ürünü tekil yeniden çeker; silinen ürün "kaynakta yok" olur; sipariş ertelenir', async () => {
+  it('işleyici ürünü tekil yeniden çeker; silinen ürün "kaynakta yok" olur; sipariş analitiğe aktarılır', async () => {
     const p101 = products.find((p) => p.product_id === 101)!;
     p101.stock = 0;
     const idx = products.findIndex((p) => p.product_id === 104);
@@ -115,11 +117,41 @@ describe.skipIf(!hasDatabase)('webhook alıcısı (F1.4, B2)', () => {
     await post({ event: 'product.deleted', site: 'esensolarmarket', product_ids: [104] });
     await post({ event: 'order.created', site: 'esensolarmarket', order: { order_id: 'S-1', total: 100, currency: 'TRY', dtd_rid: 'r1' } });
 
-    expect(await app.get(WebhooksService).processPending()).toEqual({ processed: 2, failed: 0 });
+    expect(await app.get(WebhooksService).processPending()).toEqual({ processed: 3, failed: 0 });
     const stock = await prisma.catalogStock.findFirstOrThrow({ where: { product: { externalId: '101' } } });
     expect(stock.status).toBe('out_of_stock');
     expect((await prisma.catalogProduct.findFirstOrThrow({ where: { externalId: '104' } })).status).toBe('removed_at_source');
-    expect(await prisma.webhookInbox.count({ where: { status: 'deferred', event: 'order.created' } })).toBe(1);
+    expect(await prisma.webhookInbox.count({ where: { status: 'processed', event: 'order.created' } })).toBe(1);
     expect((await prisma.sourceSite.findFirstOrThrow()).lastWebhookAt).not.toBeNull();
+  });
+
+  it('sipariş dtd_rid ile yönlendirmeye eşlenir; geçersiz/başka site/aynı sipariş eşleşmez (K53)', async () => {
+    const site = await prisma.sourceSite.findFirstOrThrow();
+    const product = await prisma.catalogProduct.findFirstOrThrow({ where: { externalId: '101' } });
+    const r = await app.get(RedirectsService).create({
+      productId: product.id,
+      storeId: product.storeId,
+      sourceSiteId: site.id,
+      channel: '3d',
+      targetUrl: 'https://esensolarmarket.com/urun/101',
+    });
+    await post({ event: 'order.created', site: 'esensolarmarket', order: { order_id: 'S-2', total: 14708.9, currency: 'try', dtd_rid: r.id } });
+    await post({ event: 'order.created', site: 'esensolarmarket', order: { order_id: 'S-3', total: 50, dtd_rid: '01a1aefe-49cb-7ce5-bbac-7939232425a9' } });
+    await app.get(WebhooksService).processPending();
+    const relay = app.get(OutboxRelay);
+    relay.register(app.get(ConversionEventHandler));
+    await relay.runOnce();
+
+    const rows = await prisma.conversion.findMany({ orderBy: { externalOrderId: 'asc' } });
+    expect(rows.map((c) => [c.externalOrderId, c.redirectId, c.amountMinor === null ? null : Number(c.amountMinor), c.currency])).toEqual([
+      ['S-1', null, 10000, 'TRY'],
+      ['S-2', r.id, 1470890, 'TRY'],
+      ['S-3', null, 5000, null],
+    ]);
+    const admin = await adminSession(app, 'analist@example.com', ['editor']);
+    const summary = (await admin.get('/admin/v1/analytics/conversions')).body;
+    expect(summary.totals).toEqual({ redirects: 1, orders: 3, matched: 1 });
+    expect(summary.rows).toEqual([{ channel: '3d', store_id: product.storeId, redirects: 1, orders: 1, amount_minor: 1470890 }]);
+    expect(JSON.stringify(summary)).not.toMatch(/buy_price/);
   });
 });

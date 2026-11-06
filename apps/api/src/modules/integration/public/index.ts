@@ -11,5 +11,5 @@ export {
 } from '../application/source-sync.service.js';
 export { SourceSitesService, PILOT_SITES, type SourceSiteSeed } from '../application/source-sites.service.js';
 export { OPEN_AFTER } from '../domain/circuit.js';
-export { WebhooksService } from '../application/webhooks.service.js';
+export { WebhooksService, ORDER_RECEIVED } from '../application/webhooks.service.js';
 export { signWebhook } from '../domain/webhook-signature.js';
