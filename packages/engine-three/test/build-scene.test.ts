@@ -16,12 +16,33 @@ describe('dtd.scene.v1 → Three.js (K45, K63)', () => {
       if (o instanceof Mesh) meshes++;
       if (o instanceof HemisphereLight || o instanceof DirectionalLight) lights++;
     });
-    expect(meshes).toBe(stats.primitives + stats.boards);
+    // Pano = gövde (çerçeve + ayaklar) + yüzler (ön ve arka): iki mesh
+    expect(meshes).toBe(stats.primitives + stats.boards * 2);
     expect(lights).toBe(2);
     expect(built.nodes.size).toBe(doc.nodes.length);
     const boards: string[] = [];
     built.scene.traverse((o) => o.userData.productId && boards.push(o.userData.productId));
-    expect(boards.filter((p) => /^p\d+$/.test(p))).toHaveLength(50);
+    expect(new Set(boards.filter((p) => /^p\d+$/.test(p))).size).toBe(50);
+    built.dispose();
+  });
+
+  it('pano iki yüzden de okunur: arka yüz normali geriye bakar, doku ters çevrilmez (ayna yok)', () => {
+    const { doc } = buildTestScene();
+    const built = buildScene(doc, { shadows: false, boardTexture });
+    let face: Mesh | null = null;
+    built.scene.traverse((o) => {
+      if (!face && o instanceof Mesh && o.userData.productId && (o.material as { map?: unknown }).map) face = o;
+    });
+    const geo = (face as unknown as Mesh).geometry;
+    const n = geo.getAttribute('normal');
+    const uv = geo.getAttribute('uv');
+    // İlk dört köşe ön yüz (+Z), sonraki dört arka yüz (−Z)
+    expect(n.getZ(0)).toBeCloseTo(1);
+    expect(n.getZ(4)).toBeCloseTo(-1);
+    // Arka yüz Y ekseninde döndürüldü: sol üst köşe (u=0) dünyada +X tarafında; ayna olsaydı −X'te kalırdı
+    const pos = geo.getAttribute('position');
+    expect(uv.getX(4)).toBe(0);
+    expect(pos.getX(4)).toBeGreaterThan(0);
     built.dispose();
   });
 

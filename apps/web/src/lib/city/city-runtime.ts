@@ -1,9 +1,9 @@
 import { type BuiltScene, buildScene, createGltfMeshLoader } from '@dtd/engine-three';
 import type { SceneDocument } from '@dtd/scene-runtime';
 import {
+  ACESFilmicToneMapping,
   Box3,
   BoxGeometry,
-  Color,
   DirectionalLight,
   Fog,
   Group,
@@ -11,7 +11,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   type Object3D,
-  PCFShadowMap,
+  PCFSoftShadowMap,
   PerspectiveCamera,
   Raycaster,
   Scene,
@@ -19,6 +19,7 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
+import { type CityDecor, SKY, applyEnvironment, createCityDecor, createSky, createStoreSign } from './environment';
 import { type Obstacle, type V2, rideAt, step } from './movement';
 import type { QualitySettings } from './quality';
 
@@ -48,6 +49,8 @@ export interface CityCallbacks {
 const EYE = 1.7;
 const WALK = 4.2;
 const TRAM_SPEED = 9;
+/** Mağaza tabelası renkleri (sırayla; mağaza kimliğinden seçilir, her açılışta aynı) */
+const SIGN_COLORS = ['#0f766e', '#1d4ed8', '#b45309', '#7c3aed', '#be123c', '#047857'];
 
 /** 3D şehir istemcisi (F4.2): bölge akışı, yürüme, tramvay, ürün panosu seçimi. Motor: Three.js (K63). */
 export class CityRuntime {
@@ -55,7 +58,7 @@ export class CityRuntime {
   private readonly scene = new Scene();
   private readonly camera = new PerspectiveCamera(65, 1, 0.1, 600);
   private readonly sun: DirectionalLight;
-  private readonly regions = new Map<string, { built: BuiltScene | null; root: Group; bundle: Bundle | null; loading: boolean }>();
+  private readonly regions = new Map<string, { built: BuiltScene | null; root: Group; bundle: Bundle | null; loading: boolean; extras: { dispose(): void }[] }>();
   private readonly obstacles: Obstacle[] = [];
   private readonly loader;
   private readonly keys = new Set<string>();
@@ -73,6 +76,9 @@ export class CityRuntime {
   private currentRegion: string | null = null;
   private readonly bounds: { min: V2; max: V2 };
   private disposed = false;
+  private readonly sky: Mesh;
+  private readonly decor: CityDecor;
+  private readonly disposeEnv: () => void;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -81,11 +87,18 @@ export class CityRuntime {
     private readonly cb: CityCallbacks,
   ) {
     this.renderer = new WebGLRenderer({ canvas, antialias: settings.dpr > 1, powerPreference: 'high-performance' });
-    this.renderer.shadowMap.type = PCFShadowMap;
-    this.scene.background = new Color('#bcd3e6');
-    this.scene.add(new HemisphereLight('#ffffff', '#6b6455', 1.2));
-    this.sun = new DirectionalLight('#ffffff', 2.2);
-    this.sun.shadow.mapSize.set(1024, 1024);
+    this.renderer.shadowMap.type = PCFSoftShadowMap;
+    // Film tonlaması: güneşli sahnede patlayan beyazlar yumuşar, renkler doygun kalır
+    this.renderer.toneMapping = ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.95;
+    this.disposeEnv = applyEnvironment(this.renderer, this.scene);
+    this.sky = createSky(1);
+    this.scene.add(this.sky);
+    this.scene.add(new HemisphereLight('#dceaf7', '#8b8070', 0.8));
+    this.sun = new DirectionalLight('#fff3dc', 2.2);
+    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.bias = -0.0004;
+    this.sun.shadow.normalBias = 0.02;
     Object.assign(this.sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 200 });
     this.scene.add(this.sun, this.sun.target);
     this.pos = [manifest.spawn[0], manifest.spawn[2]];
@@ -94,6 +107,9 @@ export class CityRuntime {
     this.bounds = xs.length ? { min: [Math.min(...xs), Math.min(...zs)], max: [Math.max(...xs), Math.max(...zs)] } : { min: [-200, -120], max: [200, 120] };
     this.tram = this.makeTram();
     this.scene.add(this.tram);
+    this.decor = createCityDecor(this.bounds, manifest.regions, manifest.transit_lines, settings.shadows, [manifest.spawn[0], manifest.spawn[2]]);
+    this.scene.add(this.decor.root);
+    this.obstacles.push(...this.decor.obstacles);
     this.applySettings(settings);
     // Varlık adresi: hangi bölgenin paketinde varsa oradan
     this.loader = createGltfMeshLoader(async (versionId, lod) => {
@@ -119,8 +135,10 @@ export class CityRuntime {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, s.dpr));
     this.renderer.shadowMap.enabled = s.shadows;
     this.sun.castShadow = s.shadows;
-    this.scene.fog = new Fog('#bcd3e6', s.fog * 0.5, s.fog);
+    this.scene.fog = new Fog(SKY.horizon, s.fog * 0.55, s.fog);
     this.camera.far = s.fog + 20;
+    // Gök kubbesi görüş uzaklığının hemen içinde (kameraya bağlı, sise girmez)
+    this.sky.scale.setScalar(s.fog + 5);
     this.camera.updateProjectionMatrix();
   }
 
@@ -151,6 +169,16 @@ export class CityRuntime {
     this.cb.onRide(true);
   }
 
+  /** Geliştirme/ekran görüntüsü: kamerayı bir noktaya ve açıya koyar (y: göz yüksekliği yerine). */
+  debugView(x: number, z: number, yaw: number, pitch: number, y = EYE) {
+    this.debugEye = y;
+    this.pos = [x, z];
+    this.yaw = yaw;
+    this.pitch = pitch;
+    void this.stream();
+  }
+  private debugEye = EYE;
+
   stats() {
     return { drawCalls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles };
   }
@@ -164,7 +192,12 @@ export class CityRuntime {
     window.removeEventListener('pointermove', this.onMove);
     window.removeEventListener('pointerup', this.onUp);
     window.removeEventListener('resize', this.resize);
-    for (const r of this.regions.values()) r.built?.dispose();
+    for (const r of this.regions.values()) {
+      r.built?.dispose();
+      for (const d of r.extras) d.dispose();
+    }
+    this.decor.dispose();
+    this.disposeEnv();
     this.renderer.dispose();
   }
 
@@ -182,6 +215,7 @@ export class CityRuntime {
       } else if (entry && !entry.loading && d > this.settings.streamRadius * 1.5) {
         this.scene.remove(entry.root);
         entry.built?.dispose();
+        for (const d of entry.extras) d.dispose();
         this.regions.delete(r.slug);
       }
     }
@@ -196,7 +230,7 @@ export class CityRuntime {
 
   private async loadRegion(slug: string, url: string) {
     const root = new Group();
-    const entry = { built: null as BuiltScene | null, root, bundle: null as Bundle | null, loading: true };
+    const entry = { built: null as BuiltScene | null, root, bundle: null as Bundle | null, loading: true, extras: [] as { dispose(): void }[] };
     this.regions.set(slug, entry);
     try {
       const bundle = (await (await fetch(url)).json()) as Bundle;
@@ -211,10 +245,23 @@ export class CityRuntime {
       this.cb.onBundles([...this.regions.values()].flatMap((r) => (r.bundle ? [r.bundle] : [])));
       await built.ready;
       this.addObstacles(built, doc);
+      this.addStoreSigns(entry, built, doc, bundle);
     } catch {
       this.regions.delete(slug);
     } finally {
       entry.loading = false;
+    }
+  }
+
+  /** Mağaza adı tabelaları: girişin arkasındaki binanın cephesine (paketteki mağaza listesinden). */
+  private addStoreSigns(entry: { root: Group; extras: { dispose(): void }[] }, built: BuiltScene, doc: SceneDocument, bundle: Bundle) {
+    const buildings = doc.nodes.filter((n) => n.components.some((c) => c.type === 'mesh')).flatMap((n) => built.nodes.get(n.id) ?? []);
+    for (const st of bundle.stores) {
+      const hash = [...st.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 0);
+      const sign = createStoreSign(st, buildings, SIGN_COLORS[hash % SIGN_COLORS.length]!);
+      if (!sign) continue;
+      entry.root.add(sign.mesh);
+      entry.extras.push(sign);
     }
   }
 
@@ -257,9 +304,10 @@ export class CityRuntime {
       if (before[0] !== this.pos[0] || before[1] !== this.pos[1]) this.maybeStream();
       this.animateTram(dt);
     }
-    this.camera.position.set(this.pos[0], EYE, this.pos[1]);
+    this.camera.position.set(this.pos[0], this.debugEye, this.pos[1]);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
-    this.sun.position.set(this.pos[0] + 40, 80, this.pos[1] + 30);
+    this.sky.position.copy(this.camera.position);
+    this.sun.position.set(this.pos[0] + 45, 70, this.pos[1] + 35);
     this.sun.target.position.set(this.pos[0], 0, this.pos[1]);
     this.renderer.render(this.scene, this.camera);
     this.sampleFps(now);
@@ -334,15 +382,23 @@ export class CityRuntime {
     }
   }
 
+  /** Tramvay: beyaz gövde, renk şeridi, koyu camlar, çatı ekipmanı (iki çizim çağrısı başına parça) */
   private makeTram(): Group {
     const g = new Group();
-    const body = new Mesh(new BoxGeometry(12, 2.8, 2.6), new MeshStandardMaterial({ color: '#d97706', roughness: 0.5 }));
-    body.position.y = 1.8;
-    const roof = new Mesh(new BoxGeometry(12.2, 0.3, 2.7), new MeshStandardMaterial({ color: '#1f2937' }));
-    roof.position.y = 3.35;
-    const windows = new Mesh(new BoxGeometry(11.6, 1, 2.65), new MeshStandardMaterial({ color: '#93c5fd', roughness: 0.2, metalness: 0.3 }));
-    windows.position.y = 2.3;
-    g.add(body, roof, windows);
+    const part = (w: number, h: number, d: number, color: string, y: number, extra: Partial<{ roughness: number; metalness: number; x: number }> = {}) => {
+      const m = new Mesh(new BoxGeometry(w, h, d), new MeshStandardMaterial({ color, roughness: extra.roughness ?? 0.5, metalness: extra.metalness ?? 0.1 }));
+      m.position.set(extra.x ?? 0, y, 0);
+      m.castShadow = true;
+      g.add(m);
+    };
+    part(12, 2.7, 2.6, '#f3f4f1', 1.75);
+    part(12.04, 0.32, 2.64, '#0f766e', 0.62);
+    part(12.04, 0.12, 2.64, '#0f766e', 3.02);
+    part(11.4, 1.05, 2.66, '#1e2a35', 2.25, { roughness: 0.15, metalness: 0.6 });
+    part(12.3, 0.22, 2.4, '#d6d8d4', 3.2);
+    part(2.2, 0.3, 1.2, '#4b5563', 3.45, { x: -2 });
+    // Ön/arka farlar
+    for (const x of [-6.03, 6.03]) part(0.06, 0.25, 2.0, '#fff7d6', 0.95, { x });
     return g;
   }
 

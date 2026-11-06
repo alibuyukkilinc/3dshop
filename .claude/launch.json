@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "web-staging-data",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@dtd/web", "dev"],
+      "env": { "API_PROXY_TARGET": "http://127.0.0.1:13100", "API_INTERNAL_URL": "http://127.0.0.1:13100" },
+      "port": 3101
+    },
+    {
       "name": "api",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [

@@ -13,7 +13,6 @@ import {
   Color,
   CylinderGeometry,
   DirectionalLight,
-  DoubleSide,
   Group,
   HemisphereLight,
   Mesh,
@@ -26,6 +25,7 @@ import {
   type Texture,
   Vector3,
 } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Lod, MeshLoader } from './mesh-loader.js';
 
 /**
@@ -61,7 +61,8 @@ function canvasBoardTexture(board: { title: string; price_text: string; color: s
   drawBoard(ctx, cv.width, cv.height, board);
   const tex = new CanvasTexture(cv);
   tex.colorSpace = SRGBColorSpace;
-  tex.anisotropy = 4;
+  // Panolar çoğunlukla eğik açıdan okunur: yüksek anizotropi yazıyı netleştirir (desteklenen üst sınıra kırpılır)
+  tex.anisotropy = 8;
   if (board.image_url) {
     // Kaynak CDN CORS'a izin verir; izin vermezse görsel çizilmez (doku kirlenmesin diye crossOrigin şart)
     const img = new Image();
@@ -119,14 +120,39 @@ export function buildScene(input: SceneDocument, opts: BuildOptions): BuiltScene
         return;
       }
       case 'board': {
+        // Pano gerçek bir tabela gibi: çerçeve + iki okunur yüz (arka yüz 180° döndürülmüş, ayna görüntüsü
+        // olmaz) + yerden yüksekse ayaklar. Çizim çağrısı az olsun diye gövde ve yüzler ayrı ayrı birleştirilir.
         const tex = boardTexture(c);
-        const geo = new PlaneGeometry(c.width, c.height);
-        const mat = new MeshStandardMaterial({ map: tex, roughness: 0.6, side: DoubleSide });
-        disposables.push(tex, geo, mat);
-        const mesh = new Mesh(geo, mat);
-        mesh.receiveShadow = opts.shadows;
-        mesh.userData.productId = c.product_id;
-        g.add(mesh);
+        const t = 0.06;
+        const faceFront = new PlaneGeometry(c.width, c.height).translate(0, 0, t / 2 + 0.002);
+        const faceBack = new PlaneGeometry(c.width, c.height).rotateY(Math.PI).translate(0, 0, -t / 2 - 0.002);
+        const faces = mergeGeometries([faceFront, faceBack])!;
+        faceFront.dispose();
+        faceBack.dispose();
+        const parts = [new BoxGeometry(c.width + 0.1, c.height + 0.1, t)];
+        g.updateWorldMatrix(true, false);
+        const bottom = g.getWorldPosition(new Vector3()).y - c.height / 2;
+        if (bottom > 0.1 && bottom < 3) {
+          // Yere inen iki ayak ve taban plakaları (pano merkezine göre)
+          for (const sx of [-1, 1]) {
+            const x = sx * (c.width / 2 - 0.15);
+            parts.push(new BoxGeometry(0.08, bottom, 0.08).translate(x, -c.height / 2 - bottom / 2, 0));
+            parts.push(new BoxGeometry(0.3, 0.04, 0.36).translate(x, -c.height / 2 - bottom + 0.02, 0));
+          }
+        }
+        const body = mergeGeometries(parts)!;
+        for (const p of parts) p.dispose();
+        const faceMat = new MeshStandardMaterial({ map: tex, roughness: 0.55, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.22 });
+        const bodyMat = material({ color: '#1f2933', roughness: 0.45, metalness: 0.6 });
+        disposables.push(tex, faces, body, faceMat);
+        const faceMesh = new Mesh(faces, faceMat);
+        const bodyMesh = new Mesh(body, bodyMat);
+        faceMesh.receiveShadow = opts.shadows;
+        bodyMesh.castShadow = opts.shadows;
+        bodyMesh.receiveShadow = opts.shadows;
+        faceMesh.userData.productId = c.product_id;
+        bodyMesh.userData.productId = c.product_id;
+        g.add(bodyMesh, faceMesh);
         return;
       }
       case 'light': {

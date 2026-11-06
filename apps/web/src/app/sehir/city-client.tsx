@@ -81,6 +81,8 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
           },
         });
         runtimeRef.current = rt;
+        // Geliştirmede kamera/ışık ayarı için konsoldan erişim (üretim derlemesinde yok)
+        if (process.env.NODE_ENV !== 'production') (window as unknown as { __dtdCity?: CityRuntime }).__dtdCity = rt;
         setPhase({ kind: 'ready' });
         track('world_enter', { world: worldSlug, quality: q });
       })
