@@ -153,6 +153,7 @@ step "nginx"
   for ip in $(curl -fsS https://www.cloudflare.com/ips-v4) $(curl -fsS https://www.cloudflare.com/ips-v6); do echo "set_real_ip_from $ip;"; done
   echo "real_ip_header CF-Connecting-IP;"
 } >/etc/nginx/snippets/dtd-cloudflare-realip.conf
+# Parola dosyası yalnız siteyi yeniden kapatmak gerekirse kullanılır (nginx-staging.conf başındaki not)
 htpasswd -bcB /etc/nginx/dtd-staging.htpasswd dtd "$BASIC_AUTH_PASS" >/dev/null
 chown root:www-data /etc/nginx/dtd-staging.htpasswd && chmod 640 /etc/nginx/dtd-staging.htpasswd
 if [[ ! -f /etc/nginx/sites-available/dtd-staging ]]; then
@@ -175,5 +176,5 @@ EOF
 chmod 700 /root/dtd-git.sh
 
 echo
-echo "Hazır: https://staging.firmaxi.com (basic auth kullanıcısı: dtd, parola: $SECRETS içinde BASIC_AUTH_PASS)"
+echo "Hazır: https://staging.firmaxi.com (herkese açık, noindex; yönetim paneli: /yonetim/)"
 echo "Yönetici açmak: sudo -u dtd -H bash -c 'cd $APP && pnpm admin:create -- --email <e-posta> --name \"<ad>\"'"
