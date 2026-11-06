@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { type Bundle, CityRuntime, type Manifest } from '../../lib/city/city-runtime';
+import { type Bundle, CityRuntime, type Manifest, type StoreRef } from '../../lib/city/city-runtime';
+import type { InteriorData } from '../../lib/city/interior';
 import { type Quality, SETTINGS, degrade, guessQuality, webglAvailable } from '../../lib/city/quality';
 import { track } from '../../lib/analytics/client';
 import { formatMinor } from '../../lib/format';
@@ -32,6 +33,8 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
   const [riding, setRiding] = useState(false);
   const [suggest2d, setSuggest2d] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
+  const [nearStore, setNearStore] = useState<StoreRef | null>(null);
+  const [inside, setInside] = useState<InteriorData | 'loading' | null>(null);
   const qualityRef = useRef<Quality>('medium');
 
   useEffect(() => {
@@ -70,6 +73,11 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
           },
           onBundles: setBundles,
           onRide: setRiding,
+          onNearStore: setNearStore,
+          onInterior: (st) => {
+            setInside(st);
+            setProduct(null);
+          },
           onFps: (fps) => {
             const d = degrade(qualityRef.current, fps);
             if (d.quality !== qualityRef.current) {
@@ -98,7 +106,7 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
   useEffect(() => {
     if (!startStore) return;
     const s = bundles.flatMap((b) => b.stores).find((x) => x.slug === startStore);
-    if (s) runtimeRef.current?.teleport(s.entrance[0], s.entrance[2] + 6, [s.entrance[0], s.entrance[2] - 10]);
+    if (s) runtimeRef.current?.teleport(s.entrance[0], s.entrance[2] + 10.5, [s.entrance[0], s.entrance[2] - 10]);
   }, [startStore, bundles]);
 
   async function openProduct(id: string) {
@@ -130,7 +138,16 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
 
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
         <div className="pointer-events-auto rounded-lg bg-black/60 px-3 py-2 text-sm text-white">
-          <p className="font-semibold">{region ?? manifest?.world.name ?? 'Şehir'}</p>
+          {inside && inside !== 'loading' ? (
+            <>
+              <p className="font-semibold">{inside.store.name}</p>
+              <p className="text-xs text-white/80">
+                {inside.total} ürün · {inside.sections.length} koridor
+              </p>
+            </>
+          ) : (
+            <p className="font-semibold">{region ?? manifest?.world.name ?? 'Şehir'}</p>
+          )}
           {riding && <p className="text-xs text-amber-300">Tramvaydasınız…</p>}
         </div>
         <div className="pointer-events-auto flex gap-2">
@@ -153,7 +170,7 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
                   type="button"
                   className="w-full rounded px-2 py-1 text-left hover:bg-gray-100"
                   onClick={() => {
-                    runtimeRef.current?.teleport(s.entrance[0], s.entrance[2] + 6, [s.entrance[0], s.entrance[2] - 10]);
+                    runtimeRef.current?.teleport(s.entrance[0], s.entrance[2] + 10.5, [s.entrance[0], s.entrance[2] - 10]);
                     setMenu(false);
                   }}
                 >
@@ -177,6 +194,30 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
             ))}
           </ul>
         </nav>
+      )}
+
+      {phase.kind === 'ready' && !product && (inside || nearStore) && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-24 flex justify-center sm:bottom-14">
+          {inside === 'loading' ? (
+            <p className="rounded-full bg-black/70 px-4 py-2 text-sm text-white" role="status">
+              Mağaza açılıyor…
+            </p>
+          ) : inside ? (
+            <button type="button" onClick={() => runtimeRef.current?.exitStore()} className="pointer-events-auto rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black shadow-lg">
+              ← Mağazadan çık
+            </button>
+          ) : (
+            nearStore && (
+              <button
+                type="button"
+                onClick={() => void runtimeRef.current?.enterStore(nearStore.slug)}
+                className="pointer-events-auto rounded-full bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white shadow-lg"
+              >
+                {nearStore.name} — içeri gir
+              </button>
+            )
+          )}
+        </div>
       )}
 
       {product && (
@@ -213,7 +254,7 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
       {isTouch && phase.kind === 'ready' && <Joystick onChange={(f, s) => runtimeRef.current?.setJoystick(f, s)} />}
 
       <p className="pointer-events-none absolute bottom-3 left-3 hidden rounded bg-black/50 px-2 py-1 text-xs text-white sm:block">
-        W A S D / oklar: yürü · Shift: koş · sürükle: bak · panoya tıkla: ürün · kalite: {quality}
+        W A S D / oklar: yürü · Shift: koş · sürükle: bak · {inside ? 'raflara yaklaş, ürüne tıkla' : 'panoya tıkla: ürün · kapıya yürü: içeri gir'} · kalite: {quality}
       </p>
     </div>
   );

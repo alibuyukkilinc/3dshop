@@ -20,6 +20,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import { type CityDecor, SKY, applyEnvironment, createCityDecor, createSky, createStoreSign } from './environment';
+import { type Interior, type InteriorData, buildInterior } from './interior';
 import { type Obstacle, type V2, rideAt, step } from './movement';
 import type { QualitySettings } from './quality';
 
@@ -38,8 +39,19 @@ export interface Bundle {
   boards: { node_id: string; product_id: string; store_id: string }[];
 }
 
+export interface StoreRef {
+  id: string;
+  slug: string;
+  name: string;
+  entrance: [number, number, number];
+}
+
 export interface CityCallbacks {
   onProduct(productId: string): void;
+  /** Giriş kapısına yakın mağaza (≈ 12 m) ya da null */
+  onNearStore?(store: StoreRef | null): void;
+  /** İç mekâna girildi (veri) / çıkıldı (null) / yükleniyor (true) */
+  onInterior?(state: InteriorData | null | 'loading'): void;
   onRegion(name: string | null): void;
   onFps(avg: number): void;
   onBundles(loaded: Bundle[]): void;
@@ -79,6 +91,11 @@ export class CityRuntime {
   private readonly sky: Mesh;
   private readonly decor: CityDecor;
   private readonly disposeEnv: () => void;
+  private interior: { built: Interior; store: StoreRef; color: string } | null = null;
+  private entering = false;
+  private nearStore: StoreRef | null = null;
+  /** Mağaza → binadan dışa doğru birim yön (çıkışta oyuncu kapının önüne konur) ve tabela rengi */
+  private readonly storeInfo = new Map<string, { out: V2; color: string }>();
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -150,15 +167,18 @@ export class CityRuntime {
 
   /** Hızlı seyahat (K04): noktaya ışınla, verilen hedefe bak. */
   teleport(x: number, z: number, lookAt?: [number, number]) {
+    if (this.interior) this.exitStore();
     this.ride = null;
     this.cb.onRide(false);
     this.pos = [x, z];
     if (lookAt) this.yaw = Math.atan2(-(lookAt[0] - x), -(lookAt[1] - z));
     void this.stream();
+    this.checkStores(false);
   }
 
   /** En yakın duraktan hedef durağa tramvayla git */
   rideTo(target: [number, number, number]) {
+    if (this.interior) this.exitStore();
     const stations = this.manifest.transit_lines.flatMap((l) => l.stations).filter((s) => s.position);
     if (!stations.length) return;
     const nearest = stations.reduce((a, b) =>
@@ -196,6 +216,7 @@ export class CityRuntime {
       r.built?.dispose();
       for (const d of r.extras) d.dispose();
     }
+    this.interior?.built.dispose();
     this.decor.dispose();
     this.disposeEnv();
     this.renderer.dispose();
@@ -244,8 +265,9 @@ export class CityRuntime {
       this.scene.add(root);
       this.cb.onBundles([...this.regions.values()].flatMap((r) => (r.bundle ? [r.bundle] : [])));
       await built.ready;
-      this.addObstacles(built, doc);
+      this.addObstacles(built, doc, bundle.stores);
       this.addStoreSigns(entry, built, doc, bundle);
+      this.checkStores(false);
     } catch {
       this.regions.delete(slug);
     } finally {
@@ -258,7 +280,11 @@ export class CityRuntime {
     const buildings = doc.nodes.filter((n) => n.components.some((c) => c.type === 'mesh')).flatMap((n) => built.nodes.get(n.id) ?? []);
     for (const st of bundle.stores) {
       const hash = [...st.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 0);
-      const sign = createStoreSign(st, buildings, SIGN_COLORS[hash % SIGN_COLORS.length]!);
+      const color = SIGN_COLORS[hash % SIGN_COLORS.length]!;
+      const sign = createStoreSign(st, buildings, color);
+      // Dışa yön: tabela (bina cephesi) → giriş; tabela yoksa +z
+      const out: V2 = sign ? norm([st.entrance[0] - sign.mesh.position.x, st.entrance[2] - sign.mesh.position.z]) : [0, 1];
+      this.storeInfo.set(st.slug, { out, color });
       if (!sign) continue;
       entry.root.add(sign.mesh);
       entry.extras.push(sign);
@@ -266,7 +292,7 @@ export class CityRuntime {
   }
 
   /** Bina tabanları (yüksekliği ≥ 3 m varlıklar) yürüme engeli olur. */
-  private addObstacles(built: BuiltScene, doc: SceneDocument) {
+  private addObstacles(built: BuiltScene, doc: SceneDocument, stores: StoreRef[]) {
     const box = new Box3();
     for (const n of doc.nodes) {
       if (!n.components.some((c) => c.type === 'mesh')) continue;
@@ -276,7 +302,10 @@ export class CityRuntime {
       const size = box.getSize(new Vector3());
       if (size.y < 3) continue;
       const c = box.getCenter(new Vector3());
-      this.obstacles.push({ x: c.x, z: c.z, r: Math.max(size.x, size.z) * 0.45 });
+      const r = Math.max(size.x, size.z) * 0.45;
+      // İçinde mağaza girişi kalan engel (tente, saçak) yürümeyi engellemez: kapıya ulaşılabilmeli
+      if (stores.some((st) => Math.hypot(st.entrance[0] - c.x, st.entrance[2] - c.z) < r + 0.5)) continue;
+      this.obstacles.push({ x: c.x, z: c.z, r });
     }
   }
 
@@ -285,6 +314,12 @@ export class CityRuntime {
   private readonly loop = (now: number) => {
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
+    if (this.interior) {
+      this.interiorFrame(dt);
+      this.sampleFps(now);
+      this.raf = requestAnimationFrame(this.loop);
+      return;
+    }
     if (this.ride) {
       this.ride.t += dt;
       const r = rideAt(this.ride.from, this.ride.to, TRAM_SPEED, this.ride.t);
@@ -301,7 +336,10 @@ export class CityRuntime {
       const strafe = k('KeyD', 'ArrowRight') - k('KeyA', 'ArrowLeft') + this.joy.strafe;
       const before = this.pos;
       this.pos = step(this.pos, this.yaw, { forward, strafe }, dt, { speed: this.keys.has('ShiftLeft') ? WALK * 2 : WALK, bounds: this.bounds, obstacles: this.obstacles });
-      if (before[0] !== this.pos[0] || before[1] !== this.pos[1]) this.maybeStream();
+      if (before[0] !== this.pos[0] || before[1] !== this.pos[1]) {
+        this.maybeStream();
+        this.checkStores();
+      }
       this.animateTram(dt);
     }
     this.camera.position.set(this.pos[0], this.debugEye, this.pos[1]);
@@ -313,6 +351,89 @@ export class CityRuntime {
     this.sampleFps(now);
     this.raf = requestAnimationFrame(this.loop);
   };
+
+  // ------------------------------------------------------------------ mağaza iç mekânı (K64)
+
+  /** Yüklü paketlerdeki mağazalar */
+  private stores(): StoreRef[] {
+    return [...this.regions.values()].flatMap((r) => r.bundle?.stores ?? []);
+  }
+
+  /** autoEnter: yürüyerek kapıya gelindiyse içeri (ışınlanma/yüklemede değil) */
+  private checkStores(autoEnter = true) {
+    let best: StoreRef | null = null;
+    let bestD = 12;
+    for (const st of this.stores()) {
+      const d = Math.hypot(st.entrance[0] - this.pos[0], st.entrance[2] - this.pos[1]);
+      if (d < bestD) [best, bestD] = [st, d];
+    }
+    if (best?.slug !== this.nearStore?.slug) {
+      this.nearStore = best;
+      this.cb.onNearStore?.(best);
+    }
+    // Kapıya yürüyünce içeri
+    if (autoEnter && best && bestD < 1.3) void this.enterStore(best.slug);
+  }
+
+  /** Mağazaya gir: iç mekân verisi yüklenir, iç mekân sahnesi kurulur, oyuncu kapının içine konur. */
+  async enterStore(slug: string) {
+    if (this.interior || this.entering) return;
+    const store = this.stores().find((s) => s.slug === slug);
+    if (!store) return;
+    this.entering = true;
+    this.cb.onInterior?.('loading');
+    try {
+      const res = await fetch(`/api/v1/stores/${slug}/interior`);
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as InteriorData;
+      if (this.disposed) return;
+      const color = this.storeInfo.get(slug)?.color ?? SIGN_COLORS[0]!;
+      const built = buildInterior(data, { environment: this.scene.environment, accent: color });
+      this.interior = { built, store, color };
+      const sp = built.layout.spawn;
+      this.pos = [sp.x, sp.z];
+      this.yaw = sp.yaw;
+      this.pitch = -0.05;
+      this.cb.onInterior?.(data);
+    } catch {
+      this.cb.onInterior?.(null);
+    } finally {
+      this.entering = false;
+    }
+  }
+
+  /** Mağazadan çık: iç mekân bırakılır, oyuncu kapının önüne, caddeye bakarak konur. */
+  exitStore() {
+    if (!this.interior) return;
+    const { built, store } = this.interior;
+    this.interior = null;
+    built.dispose();
+    const out = this.storeInfo.get(store.slug)?.out ?? [0, 1];
+    // Vitrin panolarının (girişten ≈ 4 m) önüne
+    this.pos = [store.entrance[0] + out[0] * 5.5, store.entrance[2] + out[1] * 5.5];
+    this.yaw = Math.atan2(-out[0], -out[1]);
+    this.pitch = -0.08;
+    this.nearStore = null;
+    this.cb.onInterior?.(null);
+  }
+
+  private interiorFrame(dt: number) {
+    const it = this.interior!;
+    const L = it.built.layout;
+    const k = (a: string, b: string) => (this.keys.has(a) || this.keys.has(b) ? 1 : 0);
+    const forward = k('KeyW', 'ArrowUp') - k('KeyS', 'ArrowDown') + this.joy.forward;
+    const strafe = k('KeyD', 'ArrowRight') - k('KeyA', 'ArrowLeft') + this.joy.strafe;
+    // İçeride daha yavaş yürünür (raflar yakın)
+    this.pos = step(this.pos, this.yaw, { forward, strafe }, dt, { speed: this.keys.has('ShiftLeft') ? WALK * 1.4 : WALK * 0.7, bounds: L.bounds, obstacles: L.obstacles });
+    if (this.pos[1] > L.exit.minZ && this.pos[0] > L.exit.minX && this.pos[0] < L.exit.maxX && forward + strafe !== 0) {
+      this.exitStore();
+      return;
+    }
+    it.built.update(this.pos[0], this.pos[1]);
+    this.camera.position.set(this.pos[0], 1.6, this.pos[1]);
+    this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.renderer.render(it.built.scene, this.camera);
+  }
 
   private streamAt = 0;
   private maybeStream() {
@@ -376,6 +497,13 @@ export class CityRuntime {
     const ray = new Raycaster();
     ray.setFromCamera(ndc, this.camera);
     ray.far = 40;
+    if (this.interior) {
+      ray.far = 14;
+      const hit = ray.intersectObjects(this.interior.built.pickables, true)[0];
+      const pid = hit ? this.interior.built.productAt(hit.object, hit.uv) : null;
+      if (pid) this.cb.onProduct(pid);
+      return;
+    }
     for (const h of ray.intersectObjects([...this.regions.values()].map((r) => r.root), true)) {
       const pid = findProduct(h.object);
       if (pid) return this.cb.onProduct(pid);
@@ -423,4 +551,9 @@ function distToPolygonBox(p: V2, poly: [number, number][]): number {
   const dx = Math.max(Math.min(...xs) - p[0], 0, p[0] - Math.max(...xs));
   const dz = Math.max(Math.min(...zs) - p[1], 0, p[1] - Math.max(...zs));
   return Math.hypot(dx, dz);
+}
+
+function norm(v: V2): V2 {
+  const l = Math.hypot(v[0], v[1]);
+  return l < 1e-6 ? [0, 1] : [v[0] / l, v[1] / l];
 }
