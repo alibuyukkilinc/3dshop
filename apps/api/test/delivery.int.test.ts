@@ -12,6 +12,7 @@ import { PrismaService } from '../src/infra/db/prisma.service.js';
 import { configureHttp } from '../src/infra/http/configure.js';
 import { AssetsService } from '../src/modules/assets/public/index.js';
 import { BundlesService } from '../src/modules/delivery/public/index.js';
+import { PlacementService } from '../src/modules/placement/public/index.js';
 import { SOURCE_CLIENT_FACTORY, SourceSitesService, SourceSyncService } from '../src/modules/integration/public/index.js';
 import { VisibilityService } from '../src/modules/rules/public/index.js';
 import { WorldService } from '../src/modules/world/public/index.js';
@@ -107,6 +108,9 @@ describe.skipIf(!hasDatabase)('bölge paketi ve canlı katman (F4.1, K48)', () =
     await admin.post(`/admin/v1/changesets/${cs.id}/submit`);
     await admin.post(`/admin/v1/changesets/${cs.id}/approve`, { self_approval_reason: 'Pilotta tek onaylayıcı var' });
     await admin.post(`/admin/v1/changesets/${cs.id}/publish`, {});
+    // Yerleşim motoru yuvaları eşitler ve doldurur (K23); paket sonucu okur
+    const run = await app.get(PlacementService).run('manual');
+    expect(run).toMatchObject({ changed: true, placed: 3 });
 
     expect(await bundles.buildAll()).toBe(1);
     const m = (await http().get('/api/v1/worlds/merkez-sehir')).body;
@@ -128,6 +132,62 @@ describe.skipIf(!hasDatabase)('bölge paketi ve canlı katman (F4.1, K48)', () =
     // Aynı içerikle yeniden derleme işaretçiyi değiştirmez (istemci önbelleği geçerli)
     await bundles.buildAll();
     expect((await http().get('/api/v1/worlds/merkez-sehir')).body.regions.find((r: { slug: string }) => r.slug === 'enerji-carsisi').bundle_url).toBe(url);
+  });
+
+  it('yerleşim: pin kuraldan önce gelir, kural sırası uygulanır, yuva sahibi mağaza dışı ürün pinlenemez (K23)', async () => {
+    const placement = app.get(PlacementService);
+    const slots = (await admin.get('/admin/v1/placement/slots')).body.items as {
+      id: string;
+      slot_key: string;
+      store_id: string | null;
+      live: { product_id: string; source: string }[];
+    }[];
+    expect(slots.map((s) => s.slot_key).sort()).toEqual(['esen-0', 'esen-1', 'esen-2', 'esen-3', 'esen-4', 'sahipsiz']);
+    expect(slots.find((s) => s.slot_key === 'sahipsiz')!.store_id).toBeNull();
+    const visible = (await prisma.catalogProduct.findMany({ select: { id: true, externalId: true } })).filter((p) => ['101', '103', '104'].includes(p.externalId));
+    const pinned = visible.find((p) => p.externalId === '104')!;
+    const last = slots.find((s) => s.slot_key === 'esen-4')!;
+
+    // Kural: fiyata göre azalan, pin: 104 son yuvada
+    const cs = (
+      await admin.post('/admin/v1/changesets', {
+        title: 'Vitrin',
+        items: [
+          { entity_type: 'placement_rule', op: 'create', payload: { name: 'Pahalıdan ucuza', store_id: storeId, sort_by: 'price_desc', priority: 10 } },
+          { entity_type: 'placement_pin', op: 'create', payload: { slot_id: last.id, product_id: pinned.id, reason: 'Kampanya ürünü' } },
+        ],
+      })
+    ).body;
+    expect(cs.id).toBeTruthy();
+    await admin.post(`/admin/v1/changesets/${cs.id}/submit`);
+    await admin.post(`/admin/v1/changesets/${cs.id}/approve`, { self_approval_reason: 'Pilotta tek onaylayıcı var' });
+    expect((await admin.post(`/admin/v1/changesets/${cs.id}/publish`, {})).status).toBe(200);
+
+    const run = await placement.run('manual');
+    expect(run.changed).toBe(true);
+    const after = (await admin.get('/admin/v1/placement/slots')).body.items as typeof slots;
+    const lastLive = after.find((s) => s.slot_key === 'esen-4')!.live;
+    expect(lastLive).toEqual([expect.objectContaining({ product_id: pinned.id, source: 'pin' })]);
+    const ruled = after.filter((s) => s.live[0]?.source === 'rule');
+    expect(ruled).toHaveLength(2);
+    // Aynı ürün iki yuvada olmaz
+    const all = after.flatMap((s) => s.live.map((l) => l.product_id));
+    expect(new Set(all).size).toBe(all.length);
+    // Değişiklik yoksa canlı değişmez
+    expect((await placement.run('manual')).changed).toBe(false);
+
+    // Paket pini yansıtır
+    await bundles.buildAll();
+    const m = (await http().get('/api/v1/worlds/merkez-sehir')).body;
+    const b = JSON.parse((await http().get(m.regions.find((r: { slug: string }) => r.slug === 'enerji-carsisi').bundle_url)).text);
+    expect(b.boards.find((x: { slot_id: string }) => x.slot_id === 'esen-4').product_id).toBe(pinned.id);
+
+    // Başka mağazanın yuvasına / olmayan ürün pinlenemez
+    const bad = await admin.post('/admin/v1/changesets', {
+      title: 'Hatalı pin',
+      items: [{ entity_type: 'placement_pin', op: 'create', payload: { slot_id: last.id, product_id: '01a1aefe-49cb-7ce5-bbac-7939232425a9', reason: 'deneme' } }],
+    });
+    expect(bad.status).toBe(422);
   });
 
   it('canlı fiyat: yalnız görünen ürünler; geçersiz kimlik atılır', async () => {

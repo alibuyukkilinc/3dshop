@@ -1,0 +1,123 @@
+// Modül: modules/placement. Yerleşim motoru (A5, K23): sahnedeki yuvalara hangi ürünün konacağı. Elle pin her
+// zaman kuraldan önce gelir; yalnız 3d kanalında görünen öğeler yerleşir (K43). Kurallar ve pinler changeset ile
+// yayınlanır (K44); çalıştırma otomatiktir ve sonucu canlı tabloya geçer (onaylı girdilerin sonucu). Cortex: yerlesim.
+
+/// Yayındaki sahnelerden eşitlenir: slot bileşenli her düğüm bir yuvadır. store_id = en yakın mağaza girişi.
+model PlacementSlot {
+  id        String   @id @db.Uuid
+  sceneId   String   @map("scene_id") @db.Uuid
+  /// Sahibin kimliği (bölge); bölge paketine göre gruplama için
+  ownerId   String   @map("owner_id") @db.Uuid
+  nodeId    String   @map("node_id")
+  slotKey   String   @map("slot_key")
+  /// parcel | shelf | showcase | table | wall | kiosk (pilot: showcase)
+  kind      String   @default("showcase")
+  storeId   String?  @map("store_id") @db.Uuid
+  capacity  Int      @default(1)
+  /// Aynı mağazanın yuvaları içinde sıra (soldan sağa)
+  ordinal   Int      @default(0)
+  x         Float
+  z         Float
+  /// active | orphaned (sahneden kalktı)
+  status    String   @default("active")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  pins      PlacementPin[]
+
+  @@unique([sceneId, slotKey])
+  @@index([storeId])
+  @@map("placement_slots")
+  @@schema("placement")
+}
+
+model PlacementRule {
+  id         String    @id @db.Uuid
+  name       String
+  /// Yuva seçici: boşsa tüm mağazaların yuvaları
+  storeId    String?   @map("store_id") @db.Uuid
+  /// Öğe seçici (mağazanın kendi ürünleri içinde)
+  categoryId String?   @map("category_id") @db.Uuid
+  brandId    String?   @map("brand_id") @db.Uuid
+  inStock    Boolean   @default(false) @map("in_stock")
+  /// relevance | newest | price_asc | price_desc | name
+  sortBy     String    @default("relevance") @map("sort_by")
+  limitPerSlot Int     @default(1) @map("limit_per_slot")
+  priority   Int       @default(0)
+  /// active | archived
+  status     String    @default("active")
+  validFrom  DateTime? @map("valid_from") @db.Timestamptz(3)
+  validTo    DateTime? @map("valid_to") @db.Timestamptz(3)
+  version    Int       @default(1)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("placement_rules")
+  @@schema("placement")
+}
+
+model PlacementPin {
+  id        String        @id @db.Uuid
+  slotId    String        @map("slot_id") @db.Uuid
+  slot      PlacementSlot @relation(fields: [slotId], references: [id])
+  position  Int           @default(0)
+  /// pilot: product (store, category, banner sonra)
+  itemType  String        @default("product") @map("item_type")
+  itemId    String        @map("item_id") @db.Uuid
+  locked    Boolean       @default(true)
+  validFrom DateTime?     @map("valid_from") @db.Timestamptz(3)
+  validTo   DateTime?     @map("valid_to") @db.Timestamptz(3)
+  reason    String?
+  createdBy String        @map("created_by")
+  /// active | removed
+  status    String        @default("active")
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([slotId, status])
+  @@map("placement_pins")
+  @@schema("placement")
+}
+
+model PlacementRun {
+  id         String    @id @db.Uuid
+  /// schedule | event | manual
+  trigger    String
+  startedAt  DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(3)
+  /// running | succeeded | failed
+  status     String    @default("running")
+  stats      Json      @default("{}")
+  error      String?
+
+  @@index([startedAt])
+  @@map("placement_runs")
+  @@schema("placement")
+}
+
+model PlacementResult {
+  runId    String  @map("run_id") @db.Uuid
+  slotId   String  @map("slot_id") @db.Uuid
+  position Int
+  itemType String  @map("item_type")
+  itemId   String  @map("item_id") @db.Uuid
+  /// pin | rule | default
+  source   String
+  ruleId   String? @map("rule_id") @db.Uuid
+
+  @@id([runId, slotId, position])
+  @@map("placement_results")
+  @@schema("placement")
+}
+
+/// Yayında olan yerleşim: bölge paketi bunu okur (K48).
+model PlacementLive {
+  slotId   String  @map("slot_id") @db.Uuid
+  position Int
+  itemType String  @map("item_type")
+  itemId   String  @map("item_id") @db.Uuid
+  source   String
+  ruleId   String? @map("rule_id") @db.Uuid
+  runId    String  @map("run_id") @db.Uuid
+
+  @@id([slotId, position])
+  @@map("placement_live")
+  @@schema("placement")
+}

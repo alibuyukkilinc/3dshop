@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { EventEnvelope } from '@dtd/contracts';
+import { PLACEMENT_LIVE_CHANGED } from '../../placement/public/index.js';
 import type { EventHandler } from '../../platform/public/index.js';
 import { BundlesService } from './bundles.service.js';
 
@@ -8,7 +9,7 @@ import { BundlesService } from './bundles.service.js';
 export class DeliveryEventHandler implements EventHandler {
   /** inbox anahtarı: değiştirilmemeli */
   readonly name = 'delivery.bundles';
-  readonly types = ['scene.version.published', 'rules.visibility.changed', 'assets.version.ready', 'commerce.store.updated'];
+  readonly types = ['scene.version.published', 'rules.visibility.changed', 'assets.version.ready', 'commerce.store.updated', PLACEMENT_LIVE_CHANGED];
 
   constructor(private readonly bundles: BundlesService) {}
 

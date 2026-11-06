@@ -8,7 +8,8 @@ import { SettingsService } from '../../platform/public/index.js';
 import { VisibilityService } from '../../rules/public/index.js';
 import { ScenesService } from '../../scene/public/index.js';
 import { WorldService } from '../../world/public/index.js';
-import { type BundleNode, type RegionBundle, type V3, nearestStore, priceText } from '../domain/bundle.js';
+import { PlacementService } from '../../placement/public/index.js';
+import { type BundleNode, type RegionBundle, type V3, priceText } from '../domain/bundle.js';
 
 export const BUNDLE_KEY = (regionId: string) => `delivery.bundle.${regionId}`;
 export const DIRTY_KEY = 'delivery.dirty';
@@ -39,6 +40,7 @@ export class BundlesService {
     private readonly catalog: CatalogQuery,
     private readonly commerce: CommerceFacts,
     private readonly settings: SettingsService,
+    private readonly placement: PlacementService,
   ) {}
 
   /** Sahne/görünürlük değişince işaretlenir; worker toplu derler. */
@@ -95,44 +97,44 @@ export class BundlesService {
       entrance: entranceNodes.find((n) => n.components.some((c) => c.ref_id === s.id))!.transform.p as V3,
     }));
 
-    // Yuvalar → en yakın mağaza → o mağazanın 3d'de görünen ürünleri (geçici sıralama; kural tabanlı yerleşim F5)
-    const slots = doc.nodes.filter((n) => n.components.some((c) => c.type === 'slot'));
-    const byStore = new Map<string, BundleNode[]>();
-    for (const s of slots) {
-      const owner = nearestStore(s.transform.p as V3, stores);
-      if (owner) byStore.set(owner, [...(byStore.get(owner) ?? []), s]);
-    }
+    // Yuvalar → yerleşim motorunun yayındaki sonucu (K23). Paket anında yeniden doğrular: 3d'de görünmeyen ürün ve
+    // görünmeyen mağazanın yuvası panosuz kalır (K43)
+    const placed = await this.placement.liveForScene(scene.id);
+    const visibleStoreIds = new Set(stores.map((s) => s.id));
+    const wanted = [...new Set([...placed.values()].flatMap((p) => p.items))];
+    const visibleProducts = await this.visibility.visibleIds('product', CHANNEL, wanted);
+    const ids = wanted.filter((id) => visibleProducts.has(id));
+    const cards = new Map(
+      ids.length ? (await this.catalog.list({ productIds: ids, sort: 'relevance', offset: 0, limit: ids.length })).items.map((p) => [p.id, p]) : [],
+    );
     const nodes: BundleNode[] = [...doc.nodes];
     const boards: RegionBundle['boards'] = [];
-    const boosts = await this.visibility.boosts('product', CHANNEL);
-    for (const [storeId, storeSlots] of byStore) {
-      const ids = await this.visibility.visibleProductIdsOfStore(storeId, CHANNEL);
-      const { items } = await this.catalog.list({ productIds: ids, sort: 'relevance', offset: 0, limit: storeSlots.length, boosts });
-      storeSlots.sort((a, b) => a.transform.p[0] - b.transform.p[0]);
-      items.forEach((p, i) => {
-        const slot = storeSlots[i]!;
-        const slotId = slot.components.find((c) => c.type === 'slot')!.slot_id as string;
-        const nodeId = `pano-${slotId}`;
-        nodes.push({
-          id: nodeId,
-          parent: slot.id,
-          name: p.name,
-          transform: { p: [0, BOARD.lift, 0], r: [0, 0, 0, 1], s: [1, 1, 1] },
-          components: [
-            {
-              type: 'board',
-              width: BOARD.width,
-              height: BOARD.height,
-              product_id: p.id,
-              title: p.name.slice(0, 80),
-              price_text: priceText(p.price?.final_minor, p.price?.currency),
-              color: '#0f766e',
-              ...(p.image && { image_url: p.image.replace(/_high\.(webp|jpe?g|png)$/i, '_medium.$1') }),
-            },
-          ],
-        });
-        boards.push({ node_id: nodeId, slot_id: slotId, store_id: storeId, product_id: p.id, position: slot.transform.p as V3 });
+    for (const slot of doc.nodes.filter((n) => n.components.some((c) => c.type === 'slot'))) {
+      const slotId = slot.components.find((c) => c.type === 'slot')!.slot_id as string;
+      const assignment = placed.get(slotId);
+      if (!assignment?.storeId || !visibleStoreIds.has(assignment.storeId)) continue;
+      const p = assignment.items.map((id) => cards.get(id)).find(Boolean);
+      if (!p) continue;
+      const nodeId = `pano-${slotId}`;
+      nodes.push({
+        id: nodeId,
+        parent: slot.id,
+        name: p.name,
+        transform: { p: [0, BOARD.lift, 0], r: [0, 0, 0, 1], s: [1, 1, 1] },
+        components: [
+          {
+            type: 'board',
+            width: BOARD.width,
+            height: BOARD.height,
+            product_id: p.id,
+            title: p.name.slice(0, 80),
+            price_text: priceText(p.price?.final_minor, p.price?.currency),
+            color: '#0f766e',
+            ...(p.image && { image_url: p.image.replace(/_high\.(webp|jpe?g|png)$/i, '_medium.$1') }),
+          },
+        ],
       });
+      boards.push({ node_id: nodeId, slot_id: slotId, store_id: assignment.storeId, product_id: p.id, position: slot.transform.p as V3 });
     }
 
     const versionIds = [...new Set(doc.nodes.flatMap((n) => n.components.filter((c) => c.type === 'mesh').map((c) => c.asset_version_id as string)))];

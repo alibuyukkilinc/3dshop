@@ -9,6 +9,7 @@ import { CategoriesPage } from '../catalog/categories-page';
 import { StoresPage } from '../commerce/stores-page';
 import { HomePage } from '../home/home-page';
 import { SourcesPage } from '../integration/sources-page';
+import { PlacementPage } from '../placement/placement-page';
 import { ChangesetsPage } from '../publishing/changesets-page';
 import { RulesPage } from '../rules/rules-page';
 import { WorldPage } from '../world/world-page';
@@ -24,6 +25,7 @@ const NAV = [
   ['/brands', 'Markalar'],
   ['/rules', 'Kurallar'],
   ['/world', 'Mekân'],
+  ['/placement', 'Yerleşim'],
   ['/changesets', 'Yayın'],
 ] as const;
 
@@ -61,6 +63,9 @@ export function AdminShell({ me, onLoggedOut }: { me: AdminMe; onLoggedOut: () =
       break;
     case '/world':
       page = <WorldPage canPrepare={canWrite || me.roles.includes('editor')} />;
+      break;
+    case '/placement':
+      page = <PlacementPage canPrepare={canWrite || me.roles.includes('editor')} canRun={canWrite || me.roles.includes('editor')} />;
       break;
     case '/changesets':
       page = <ChangesetsPage me={me} id={csMatch?.[1] ?? null} />;

@@ -26,16 +26,6 @@ export interface BundleNode {
   components: Record<string, unknown>[];
 }
 
-/** Vitrin yuvasını en yakın mağaza girişine bağlar (eşik metre); yakında giriş yoksa yuva boş kalır. */
-export function nearestStore(slot: V3, entrances: { id: string; entrance: V3 }[], maxM = 20): string | null {
-  let best: { id: string; d: number } | null = null;
-  for (const e of entrances) {
-    const d = Math.hypot(slot[0] - e.entrance[0], slot[2] - e.entrance[2]);
-    if (d <= maxM && (!best || d < best.d)) best = { id: e.id, d };
-  }
-  return best?.id ?? null;
-}
-
 /** Pano başlığında fiyat (kuruş → "14.708,90 TL"); kesin değer canlı katmandan. */
 export function priceText(minor: number | null | undefined, currency = 'TRY'): string {
   if (minor === null || minor === undefined) return '';

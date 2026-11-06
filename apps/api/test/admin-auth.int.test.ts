@@ -15,6 +15,8 @@ describe.skipIf(!hasDatabase)('yönetici girişi + zorunlu 2FA (F0.3)', () => {
   let app: INestApplication;
   let secret = '';
   let recovery: string[] = [];
+  /** Kurulumda kullanılan TOTP adımı: sonraki test aynı kodu yeniden dener (adım sınırına denk gelse de) */
+  let usedStep = 0;
 
   beforeAll(async () => {
     db = await createTestDatabase();
@@ -74,7 +76,8 @@ describe.skipIf(!hasDatabase)('yönetici girişi + zorunlu 2FA (F0.3)', () => {
     const wrong = await c.post('/admin/v1/auth/mfa/verify', { code: '000000' });
     expect(wrong.status).toBe(401);
 
-    const code = hotp(base32Decode(secret), totpStep(Date.now()));
+    usedStep = totpStep(Date.now());
+    const code = hotp(base32Decode(secret), usedStep);
     const verified = await c.post('/admin/v1/auth/mfa/verify', { code });
     expect(verified.status).toBe(200);
     expect(verified.body.stage).toBe('full');
@@ -94,7 +97,7 @@ describe.skipIf(!hasDatabase)('yönetici girişi + zorunlu 2FA (F0.3)', () => {
     expect((await c.post('/admin/v1/auth/login', { email: EMAIL, password: PASSWORD })).body).toEqual({
       stage: 'mfa_verify',
     });
-    const step = totpStep(Date.now());
+    const step = usedStep;
     const reused = await c.post('/admin/v1/auth/mfa/verify', { code: hotp(base32Decode(secret), step) });
     expect(reused.status).toBe(401);
     const next = await c.post('/admin/v1/auth/mfa/verify', { code: hotp(base32Decode(secret), step + 1) });
