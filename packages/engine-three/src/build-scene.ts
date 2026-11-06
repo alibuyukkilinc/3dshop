@@ -130,7 +130,8 @@ export function buildScene(input: SceneDocument, opts: BuildOptions): BuiltScene
       case 'mesh':
       case 'slot':
       case 'portal':
-        // mesh: varlık kütüphanesi (F3); slot/portal görünmez işaretlerdir
+      case 'anchor':
+        // mesh: varlık kütüphanesi (F3); slot/portal/çapa görünmez işaretlerdir
         g.userData[c.type] = c;
         return;
     }

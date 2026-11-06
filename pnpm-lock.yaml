@@ -99,6 +99,9 @@ importers:
       '@dtd/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@dtd/scene-runtime':
+        specifier: workspace:*
+        version: link:../../packages/scene-runtime
       '@nestjs/common':
         specifier: ^12.1.0
         version: 12.3.3(reflect-metadata@0.2.2)(rxjs@7.8.2)

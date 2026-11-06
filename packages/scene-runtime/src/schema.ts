@@ -69,6 +69,15 @@ const PathLoopSchema = z.object({
 });
 
 const SlotSchema = z.object({ type: z.literal('slot'), slot_id: z.string() });
+/**
+ * Dünyadaki bir yere bağlanan çapa (K40): tramvay durağı, mağaza girişi, doğuş noktası, vitrin. ref_id
+ * world.places kimliğidir; düğümün dünya konumu o yerin sanal konumudur (editör eşitler).
+ */
+const AnchorSchema = z.object({
+  type: z.literal('anchor'),
+  kind: z.enum(['station', 'store_entrance', 'spawn', 'showcase']),
+  ref_id: z.string().min(1),
+});
 const PortalSchema = z.object({ type: z.literal('portal'), portal_id: z.string() });
 
 export const ComponentSchema = z.discriminatedUnion('type', [
@@ -79,6 +88,7 @@ export const ComponentSchema = z.discriminatedUnion('type', [
   PathLoopSchema,
   SlotSchema,
   PortalSchema,
+  AnchorSchema,
 ]);
 
 export const NodeSchema = z.object({

@@ -1,0 +1,62 @@
+// Modül: modules/scene. Motor bağımsız sahne belgeleri ve değişmez sürümleri (K20, K45). Sahip (dünya, bölge,
+// mağaza iç mekânı) başka modüllerde: owner_type + owner_id (K32). Cortex: yayin.
+
+model Scene {
+  id            String         @id @db.Uuid
+  /// world | region | store_interior | map
+  ownerType     String         @map("owner_type")
+  ownerId       String         @map("owner_id") @db.Uuid
+  name          String
+  /// active | archived
+  status        String         @default("active")
+  /// Yayındaki sürüm (publishing ile değişir)
+  liveVersionId String?        @map("live_version_id") @db.Uuid
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  version       Int            @default(1)
+  versions      SceneVersion[]
+
+  @@unique([ownerType, ownerId])
+  @@map("scenes")
+  @@schema("scene")
+}
+
+/// Değişmez (K45): UPDATE/DELETE tetikleyiciyle reddedilir. Her kayıt yeni bir sürümdür.
+model SceneVersion {
+  id              String           @id @db.Uuid
+  sceneId         String           @map("scene_id") @db.Uuid
+  scene           Scene            @relation(fields: [sceneId], references: [id])
+  number          Int
+  schemaVersion   String           @map("schema_version")
+  /// dtd.scene.v1 belgesi
+  document        Json
+  /// Belgenin başvurduğu varlık sürümleri (assets, kimlikle)
+  assetVersionIds String[]         @map("asset_version_ids") @db.Uuid
+  /// sha256(kanonik belge): aynı içerik ikinci kez sürüm olmaz
+  checksum        String
+  note            String?
+  createdBy       String           @map("created_by")
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  nodes           SceneNodeIndex[]
+
+  @@unique([sceneId, number])
+  @@map("scene_versions")
+  @@schema("scene")
+}
+
+/// Belgeden türetilen dizin: yuva, portal ve çapa düğümleri (yerleşim ve navigasyon bunları sorgular).
+model SceneNodeIndex {
+  sceneVersionId String       @map("scene_version_id") @db.Uuid
+  version        SceneVersion @relation(fields: [sceneVersionId], references: [id])
+  nodeId         String       @map("node_id")
+  /// mesh | slot | portal | anchor | light | board | primitive
+  kind           String
+  refId          String?      @map("ref_id")
+  x              Float
+  y              Float
+  z              Float
+
+  @@id([sceneVersionId, nodeId, kind])
+  @@index([kind, refId])
+  @@map("scene_node_index")
+  @@schema("scene")
+}
