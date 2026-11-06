@@ -9,13 +9,14 @@ import type { Readable } from 'node:stream';
  * değişmez; bu yüzden uzun önbellek (immutable) güvenli. Pilotta sunucu diski; CDN (cdn.firmaxi.com) önüne
  * çekme bölgesi olarak konur. Kök ASSETS_DIR (yoksa depo kökünde var/assets).
  */
-export const KEY_RE = /^[0-9a-f]{64}\.(glb|webp|png|jpg)$/;
+export const KEY_RE = /^[0-9a-f]{64}\.(glb|webp|png|jpg|json)$/;
 
 export const MIME: Record<string, string> = {
   glb: 'model/gltf-binary',
   webp: 'image/webp',
   png: 'image/png',
   jpg: 'image/jpeg',
+  json: 'application/json; charset=utf-8',
 };
 
 export class BlobStore {

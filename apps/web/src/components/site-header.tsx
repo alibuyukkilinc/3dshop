@@ -27,6 +27,16 @@ export function SiteHeader() {
                 Mağazalar
               </Link>
             </li>
+            <li>
+              <Link href="/sehir" className="hover:underline">
+                3D şehir
+              </Link>
+            </li>
+            <li>
+              <Link href="/harita" className="hover:underline">
+                Harita
+              </Link>
+            </li>
           </ul>
         </nav>
       </div>

@@ -15,9 +15,10 @@ import { RulesModule } from './modules/rules/public/index.js';
 import { WorldModule } from './modules/world/public/index.js';
 import { SceneModule } from './modules/scene/public/index.js';
 import { AssetsModule } from './modules/assets/public/index.js';
+import { DeliveryModule } from './modules/delivery/public/index.js';
 
 @Module({
-  imports: [DbModule, PlatformModule, AuditModule, IdentityModule, OpsModule, CommerceModule, CatalogModule, IntegrationModule, RulesModule, PublishingModule, DiscoveryModule, AnalyticsModule, WorldModule, SceneModule, AssetsModule],
+  imports: [DbModule, PlatformModule, AuditModule, IdentityModule, OpsModule, CommerceModule, CatalogModule, IntegrationModule, RulesModule, PublishingModule, DiscoveryModule, AnalyticsModule, WorldModule, SceneModule, AssetsModule, DeliveryModule],
   controllers: [HealthController],
 })
 export class AppModule {}

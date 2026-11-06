@@ -49,6 +49,8 @@ const BoardSchema = z.object({
   title: z.string(),
   price_text: z.string(),
   color: Color,
+  /** Ürün görseli (kaynak CDN, CORS açık); yüklenince panoya çizilir */
+  image_url: z.url().optional(),
 });
 
 const LightSchema = z.object({

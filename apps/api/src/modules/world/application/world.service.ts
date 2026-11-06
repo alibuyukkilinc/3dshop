@@ -182,6 +182,22 @@ export class WorldService {
       .sort((a, b) => a.distance_km - b.distance_km);
   }
 
+  /** Yerlerin sanal konumları (bölge paketi, navigasyon). */
+  async placePositions(ids: string[]): Promise<Map<string, [number, number, number]>> {
+    const rows = await this.prisma.placeVirtual.findMany({ where: { placeId: { in: ids } }, select: { placeId: true, x: true, y: true, z: true } });
+    return new Map(rows.map((r) => [r.placeId, [r.x, r.y, r.z]]));
+  }
+
+  async worldBySlug(slug: string) {
+    return (await this.worlds()).find((w) => w.slug === slug) ?? null;
+  }
+
+  async spawnOf(worldSlug: string): Promise<[number, number, number] | null> {
+    const w = await this.prisma.world.findUnique({ where: { slug: worldSlug }, select: { defaultSpawnPlaceId: true } });
+    if (!w?.defaultSpawnPlaceId) return null;
+    return (await this.placePositions([w.defaultSpawnPlaceId])).get(w.defaultSpawnPlaceId) ?? null;
+  }
+
   /** Bölgenin x-z sınır kutusu (sahne zemini ve editör odağı). */
   async regionBounds(regionId: string): Promise<{ min: [number, number]; max: [number, number] } | null> {
     const r = await this.prisma.region.findUnique({ where: { id: regionId }, select: { polygon: true } });

@@ -16,6 +16,7 @@ import {
 import { AlertMailer, AlertService, ErrorReporter, OpsWorkerModule } from './modules/ops/public/index.js';
 import { OutboxRelay, PlatformModule } from './modules/platform/public/index.js';
 import { AssetsModule, AssetsService } from './modules/assets/public/index.js';
+import { BundlesService, DeliveryEventHandler, DeliveryModule } from './modules/delivery/public/index.js';
 import { ChangesetsService, PublishingModule } from './modules/publishing/public/index.js';
 import { RulesModule, VisibilityEventHandler, VisibilityService } from './modules/rules/public/index.js';
 
@@ -24,7 +25,7 @@ import { RulesModule, VisibilityEventHandler, VisibilityService } from './module
  * işler. Kuyruk (Redis + BullMQ, K34) F0.6'da sunucuya Redis kurulunca eklenir; o zamana kadar outbox
  * yoklamayla teslim edilir.
  */
-@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule, IntegrationModule, RulesModule, PublishingModule, AssetsModule] })
+@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule, IntegrationModule, RulesModule, PublishingModule, AssetsModule, DeliveryModule] })
 class WorkerModule {}
 
 const OUTBOX_POLL_MS = 1_000;
@@ -46,6 +47,8 @@ async function bootstrap() {
   relay.register(app.get(AlertMailer));
   // Görünürlük: katalog/ticari olaylarla artımlı yeniden hesap (K43)
   relay.register(app.get(VisibilityEventHandler));
+  // Bölge paketleri: sahne/görünürlük/varlık olayları paketleri kirli işaretler (K48)
+  relay.register(app.get(DeliveryEventHandler));
   const visibility = app.get(VisibilityService);
   process.on('unhandledRejection', (reason) => void reporter.report(reason, 'worker', { kind: 'unhandledRejection' }));
   let stopping = false;
@@ -146,6 +149,12 @@ Site ${site.circuitOpenUntil?.toISOString() ?? '-'} zamanına kadar bekletiliyor
     }
   }, 5_000);
 
+  const bundles = app.get(BundlesService);
+  const bundleTimer = setInterval(
+    () => void bundles.buildIfDirty().catch((e) => reporter.report(e, 'job', { job: 'region_bundles' })),
+    30_000,
+  );
+
   const syncTimer = loadEnv().INTEGRATION_SYNC_ENABLED ? setInterval(() => void syncTick(), SYNC_TICK_MS) : null;
   if (syncTimer) void syncTick();
 
@@ -173,6 +182,7 @@ Site ${site.circuitOpenUntil?.toISOString() ?? '-'} zamanına kadar bekletiliyor
     clearInterval(visibilityTimer);
     clearInterval(publishTimer);
     clearInterval(assetTimer);
+    clearInterval(bundleTimer);
   };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);

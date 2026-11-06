@@ -154,6 +154,11 @@ export class ScenesService {
     });
   }
 
+  /** Bir sahibin sahnesi (varsa). */
+  async byOwner(type: OwnerType, id: string) {
+    return this.prisma.scene.findUnique({ where: { ownerType_ownerId: { ownerType: type, ownerId: id } }, select: { id: true, liveVersionId: true } });
+  }
+
   /** Yayındaki belge (istemci, F4 bölge paketi). */
   async live(sceneId: string) {
     const s = await this.prisma.scene.findUnique({ where: { id: sceneId } });

@@ -35,7 +35,7 @@ import type { Lod, MeshLoader } from './mesh-loader.js';
 export interface BuildOptions {
   shadows: boolean;
   /** Pano dokusu üreticisi; varsayılanı tarayıcıda tuval kullanır (testte değiştirilir) */
-  boardTexture?: (board: { title: string; price_text: string; color: string }) => Texture;
+  boardTexture?: (board: { title: string; price_text: string; color: string; image_url?: string }) => Texture;
   /** Varlık kütüphanesi modelleri (mesh bileşeni); verilmezse mesh düğümleri boş kalır */
   meshLoader?: MeshLoader;
   /** lod_policy 'auto' iken hangi LOD (kalite profili, K12) */
@@ -53,14 +53,26 @@ export interface BuiltScene {
   dispose(): void;
 }
 
-function canvasBoardTexture(board: { title: string; price_text: string; color: string }): Texture {
+function canvasBoardTexture(board: { title: string; price_text: string; color: string; image_url?: string }): Texture {
   const cv = document.createElement('canvas');
   cv.width = BOARD_TEXTURE_PX.w;
   cv.height = BOARD_TEXTURE_PX.h;
-  drawBoard(cv.getContext('2d')!, cv.width, cv.height, board);
+  const ctx = cv.getContext('2d')!;
+  drawBoard(ctx, cv.width, cv.height, board);
   const tex = new CanvasTexture(cv);
   tex.colorSpace = SRGBColorSpace;
   tex.anisotropy = 4;
+  if (board.image_url) {
+    // Kaynak CDN CORS'a izin verir; izin vermezse görsel çizilmez (doku kirlenmesin diye crossOrigin şart)
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.decoding = 'async';
+    img.onload = () => {
+      drawBoard(ctx, cv.width, cv.height, board, img);
+      tex.needsUpdate = true;
+    };
+    img.src = board.image_url;
+  }
   return tex;
 }
 

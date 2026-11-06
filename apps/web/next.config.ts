@@ -7,8 +7,13 @@ import type { NextConfig } from 'next';
 const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:3100';
 
 const config: NextConfig = {
-  transpilePackages: ['@dtd/contracts'],
+  transpilePackages: ['@dtd/contracts', '@dtd/scene-runtime', '@dtd/engine-three'],
   poweredByHeader: false,
+  // Paylaşılan paketler NodeNext içe aktarımı kullanır ('./x.js' → x.ts); Turbopack bunu çözmediği için webpack
+  webpack(cfg) {
+    cfg.resolve.extensionAlias = { '.js': ['.ts', '.tsx', '.js'] };
+    return cfg;
+  },
   async rewrites() {
     return process.env.NODE_ENV === 'production' ? [] : [{ source: '/api/:path*', destination: `${apiTarget}/api/:path*` }];
   },

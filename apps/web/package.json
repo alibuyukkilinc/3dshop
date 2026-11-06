@@ -4,17 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --port 3101",
-    "build": "next build",
+    "dev": "next dev --webpack --port 3101",
+    "build": "next build --webpack",
     "start": "next start --port 3101",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@dtd/contracts": "workspace:*",
+    "@dtd/engine-three": "workspace:*",
+    "@dtd/scene-runtime": "workspace:*",
     "next": "16.4.5",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@dtd/config": "workspace:*",
@@ -22,6 +25,7 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/three": "0.186.0",
     "tailwindcss": "^4.3.3",
     "vitest": "^5.0.2"
   }

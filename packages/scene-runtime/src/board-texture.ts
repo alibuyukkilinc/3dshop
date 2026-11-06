@@ -9,14 +9,23 @@ export function drawBoard(
   w: number,
   h: number,
   board: { title: string; price_text: string; color: string },
+  image?: CanvasImageSource & { width: number; height: number },
 ): void {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, w, h);
   ctx.fillStyle = board.color;
   ctx.fillRect(0, 0, w, Math.round(h * 0.16));
-  // Ürün görseli yerine yer tutucu (F1'de gerçek ürün görseli kaynak siteden gelir)
+  // Ürün görseli: kutuya sığdırılır (oran korunur); yüklenene kadar yer tutucu
   ctx.fillStyle = '#eef1f5';
   ctx.fillRect(w * 0.08, h * 0.22, w * 0.84, h * 0.4);
+  if (image && image.width > 0 && image.height > 0) {
+    const bw = w * 0.84;
+    const bh = h * 0.4;
+    const k = Math.min(bw / image.width, bh / image.height);
+    const iw = image.width * k;
+    const ih = image.height * k;
+    ctx.drawImage(image, w * 0.08 + (bw - iw) / 2, h * 0.22 + (bh - ih) / 2, iw, ih);
+  }
   ctx.strokeStyle = board.color;
   ctx.lineWidth = 6;
   ctx.strokeRect(w * 0.08, h * 0.22, w * 0.84, h * 0.4);

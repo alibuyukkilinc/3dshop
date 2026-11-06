@@ -68,6 +68,12 @@ export class PublicCatalogController {
     res.redirect(302, url);
   }
 
+  @Get('map/pins')
+  @Header('Cache-Control', 'public, max-age=300')
+  async pins() {
+    return { items: await this.storefront.mapPins() };
+  }
+
   @Get('sitemap')
   @Header('Cache-Control', 'public, max-age=300')
   sitemap() {

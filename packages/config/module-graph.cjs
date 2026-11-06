@@ -19,7 +19,8 @@ module.exports = {
   scene: [...KERNEL, 'assets', 'world'],
   placement: [...KERNEL, 'rules', 'catalog', 'scene'],
   publishing: [...KERNEL],
-  delivery: [...KERNEL, 'scene', 'placement', 'rules', 'assets', 'world', 'catalog'],
+  // delivery → commerce: paket mağaza adlarını/girişlerini taşır (F4.1)
+  delivery: [...KERNEL, 'scene', 'placement', 'rules', 'assets', 'world', 'catalog', 'commerce'],
   // discovery → analytics: "Sitede satın al" yönlendirmesi analytics.RedirectService'e yazar (K53, F2.4)
   discovery: [...KERNEL, 'catalog', 'commerce', 'world', 'rules', 'analytics'],
   analytics: [...KERNEL],

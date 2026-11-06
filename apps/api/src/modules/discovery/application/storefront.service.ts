@@ -3,6 +3,7 @@ import { type RedirectChannel, RedirectsService } from '../../analytics/public/i
 import { CatalogQuery, type ProductSort } from '../../catalog/public/index.js';
 import { CommerceFacts } from '../../commerce/public/index.js';
 import { type Channel, VisibilityService } from '../../rules/public/index.js';
+import { WorldService } from '../../world/public/index.js';
 
 export const PAGE_SIZE = 24;
 
@@ -17,7 +18,28 @@ export class StorefrontService {
     private readonly catalog: CatalogQuery,
     private readonly commerce: CommerceFacts,
     private readonly redirects: RedirectsService,
+    private readonly world: WorldService,
   ) {}
+
+  /** Türkiye haritası pinleri (F4.3): 2d kanalında görünen mağazaların şubeleri. Konum hassasiyeti açıkça döner. */
+  async mapPins() {
+    const visible = await this.visibility.visibleIds('store', '2d');
+    const stores = new Map((await this.commerce.publicStores([...visible])).map((s) => [s.id, s]));
+    const branches = await this.world.branches([...visible]);
+    return branches
+      .filter((b) => b.geo && b.store_id && stores.has(b.store_id))
+      .map((b) => {
+        const s = stores.get(b.store_id!)!;
+        return {
+          id: b.place_id,
+          store: { slug: s.slug, name: s.name },
+          lat: b.geo!.lat,
+          lng: b.geo!.lng,
+          precision: b.geo!.precision,
+          place: [b.geo!.district, b.geo!.province].filter(Boolean).join(', '),
+        };
+      });
+  }
 
   /** Arama (search kanalı): görünen ürünler arasında; mağaza gizliyse ürün de gizli (mağaza kuralı ürüne uygulanır). */
   async search(q: string, page: number) {
