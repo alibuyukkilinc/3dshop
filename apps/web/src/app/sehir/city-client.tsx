@@ -1,21 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type Bundle, CityRuntime, type Manifest, type StoreRef } from '../../lib/city/city-runtime';
 import type { InteriorData } from '../../lib/city/interior';
 import { type Quality, SETTINGS, degrade, guessQuality, webglAvailable } from '../../lib/city/quality';
 import { track } from '../../lib/analytics/client';
-import { formatMinor } from '../../lib/format';
-
-interface ProductInfo {
-  id: string;
-  name: string;
-  price: { final_minor: number; list_minor: number; currency: string } | null;
-  in_stock: boolean;
-  store: { slug: string; name: string };
-  images: string[];
-}
+import { useCart } from '../../lib/cart';
+import { CartBar, CartDrawer, type ProductInfo, ProductSheet, StoreHud, WelcomeToast } from './store-ui';
 
 type Phase = { kind: 'loading' } | { kind: 'no3d'; reason: string } | { kind: 'ready' } | { kind: 'error'; message: string };
 
@@ -35,6 +27,9 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
   const [isTouch, setIsTouch] = useState(false);
   const [nearStore, setNearStore] = useState<StoreRef | null>(null);
   const [inside, setInside] = useState<InteriorData | 'loading' | null>(null);
+  const [accent, setAccent] = useState('#0f766e');
+  const [cartOpen, setCartOpen] = useState(false);
+  const cartItems = useCart();
   const qualityRef = useRef<Quality>('medium');
 
   useEffect(() => {
@@ -74,9 +69,12 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
           onBundles: setBundles,
           onRide: setRiding,
           onNearStore: setNearStore,
-          onInterior: (st) => {
+          onInterior: (st, color) => {
             setInside(st);
+            if (color) setAccent(color);
             setProduct(null);
+            setCartOpen(false);
+            if (st && st !== 'loading') track('store_enter', { store_id: st.store.id, surface: '3d' });
           },
           onFps: (fps) => {
             const d = degrade(qualityRef.current, fps);
@@ -109,6 +107,34 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
     if (s) runtimeRef.current?.teleport(s.entrance[0], s.entrance[2] + 10.5, [s.entrance[0], s.entrance[2] - 10]);
   }, [startStore, bundles]);
 
+  // Sepetteki ürünler raflarda rozetle; açık ürün rafta nabız gibi atan çerçeveyle
+  useEffect(() => {
+    runtimeRef.current?.setCart(new Map(cartItems.map((i) => [i.product_id, i.qty])));
+  }, [cartItems, inside]);
+  useEffect(() => {
+    runtimeRef.current?.selectProduct(product?.id ?? null);
+  }, [product, inside]);
+
+  const insideData = inside && inside !== 'loading' ? inside : null;
+  // Ürün kartında "Aynı koridordan": ürünün bölümündeki diğer ürünler (stokta olanlar önce)
+  const related = useMemo(() => {
+    if (!insideData || !product) return [];
+    const sec = insideData.sections.find((s) => s.products.some((p) => p.id === product.id));
+    if (!sec) return insideData.featured.filter((p) => p.id !== product.id);
+    return sec.products
+      .filter((p) => p.id !== product.id)
+      .sort((a, b) => Number(b.in_stock) - Number(a.in_stock))
+      .slice(0, 12);
+  }, [insideData, product]);
+
+  const setInset = useCallback((px: number) => runtimeRef.current?.setBottomInset(px), []);
+
+  /** Arama/sepet/benzer ürün: ürünü aç ve rafına yürü */
+  function showProduct(id: string) {
+    void openProduct(id);
+    runtimeRef.current?.focusProduct(id);
+  }
+
   async function openProduct(id: string) {
     try {
       const [p, live] = await Promise.all([
@@ -136,31 +162,34 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
       <canvas ref={canvasRef} className="h-full w-full" aria-label="3D şehir: sürükleyerek bak, W A S D ya da oklarla yürü, panolara dokun" />
       {phase.kind === 'loading' && <p className="absolute inset-x-0 top-1/2 text-center text-white">Şehir yükleniyor…</p>}
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
-        <div className="pointer-events-auto rounded-lg bg-black/60 px-3 py-2 text-sm text-white">
-          {inside && inside !== 'loading' ? (
-            <>
-              <p className="font-semibold">{inside.store.name}</p>
-              <p className="text-xs text-white/80">
-                {inside.total} ürün · {inside.sections.length} koridor
-              </p>
-            </>
-          ) : (
+      {insideData ? (
+        <StoreHud
+          key={insideData.store.id}
+          data={insideData}
+          accent={accent}
+          onSection={(i) => (setProduct(null), runtimeRef.current?.focusSection(i))}
+          onPick={showProduct}
+          onExit={() => runtimeRef.current?.exitStore()}
+        />
+      ) : (
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
+          <div className="pointer-events-auto rounded-lg bg-black/60 px-3 py-2 text-sm text-white">
             <p className="font-semibold">{region ?? manifest?.world.name ?? 'Şehir'}</p>
-          )}
-          {riding && <p className="text-xs text-amber-300">Tramvaydasınız…</p>}
+            {riding && <p className="text-xs text-amber-300">Tramvaydasınız…</p>}
+          </div>
+          <div className="pointer-events-auto flex gap-2">
+            <button type="button" onClick={() => setMenu((m) => !m)} className="rounded-lg bg-white/90 px-3 py-2 text-sm font-medium text-black" aria-expanded={menu}>
+              Nereye?
+            </button>
+            <Link href="/" className="rounded-lg bg-white/90 px-3 py-2 text-sm font-medium text-black">
+              2D görünüm
+            </Link>
+          </div>
         </div>
-        <div className="pointer-events-auto flex gap-2">
-          <button type="button" onClick={() => setMenu((m) => !m)} className="rounded-lg bg-white/90 px-3 py-2 text-sm font-medium text-black" aria-expanded={menu}>
-            Nereye?
-          </button>
-          <Link href="/" className="rounded-lg bg-white/90 px-3 py-2 text-sm font-medium text-black">
-            2D görünüm
-          </Link>
-        </div>
-      </div>
+      )}
+      {insideData && <WelcomeToast key={`hi-${insideData.store.id}`} data={insideData} accent={accent} />}
 
-      {menu && (
+      {menu && !insideData && (
         <nav aria-label="Hızlı seyahat" className="absolute top-16 right-3 max-h-[70vh] w-64 overflow-y-auto rounded-lg bg-white p-3 text-sm text-black shadow-xl">
           <p className="text-xs font-semibold text-gray-600 uppercase">Mağazalar</p>
           <ul className="mt-1 space-y-1">
@@ -196,16 +225,12 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
         </nav>
       )}
 
-      {phase.kind === 'ready' && !product && (inside || nearStore) && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-24 flex justify-center sm:bottom-14">
+      {phase.kind === 'ready' && !product && !insideData && (inside === 'loading' || nearStore) && (
+        <div className={`pointer-events-none absolute inset-x-0 flex justify-center ${cartItems.length ? 'bottom-[150px] sm:bottom-[90px]' : 'bottom-24 sm:bottom-14'}`}>
           {inside === 'loading' ? (
             <p className="rounded-full bg-black/70 px-4 py-2 text-sm text-white" role="status">
               Mağaza açılıyor…
             </p>
-          ) : inside ? (
-            <button type="button" onClick={() => runtimeRef.current?.exitStore()} className="pointer-events-auto rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black shadow-lg">
-              ← Mağazadan çık
-            </button>
           ) : (
             nearStore && (
               <button
@@ -221,28 +246,25 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
       )}
 
       {product && (
-        <section aria-label="Ürün" className="absolute inset-x-3 bottom-3 mx-auto max-w-md rounded-xl bg-white p-4 text-black shadow-2xl sm:inset-x-auto sm:right-3">
-          <div className="flex gap-3">
-            {product.images[0] && <img src={product.images[0]} alt="" width={80} height={80} className="size-20 rounded object-contain" />}
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-gray-600">{product.store.name}</p>
-              <h2 className="line-clamp-2 font-semibold">{product.name}</h2>
-              <p className="mt-1 text-lg font-semibold">{product.price ? formatMinor(product.price.final_minor, product.price.currency) : 'Fiyat sitede'}</p>
-              <p className={`text-xs ${product.in_stock ? 'text-green-700' : 'text-amber-700'}`}>{product.in_stock ? 'Stokta' : 'Stokta yok'}</p>
-            </div>
-            <button type="button" onClick={() => setProduct(null)} className="self-start text-gray-500" aria-label="Kapat">
-              ✕
-            </button>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <a href={`/r/${product.id}?ch=3d`} target="_blank" rel="nofollow noopener" className="flex-1 rounded-md bg-teal-700 px-3 py-2 text-center text-sm font-medium text-white">
-              Sitede satın al
-            </a>
-            <Link href={`/urun/${product.id}`} className="rounded-md border border-gray-300 px-3 py-2 text-sm">
-              Ayrıntı
-            </Link>
-          </div>
-        </section>
+        <ProductSheet
+          product={product}
+          accent={insideData ? accent : '#0f766e'}
+          related={related}
+          inStore={!!insideData}
+          onPick={showProduct}
+          onClose={() => setProduct(null)}
+          onInset={setInset}
+        />
+      )}
+
+      <CartBar accent={insideData ? accent : '#0f766e'} inside={!!insideData} onOpen={() => (setProduct(null), setCartOpen(true))} />
+      {cartOpen && (
+        <CartDrawer
+          accent={insideData ? accent : '#0f766e'}
+          currentStore={insideData?.store.slug ?? null}
+          onClose={() => setCartOpen(false)}
+          onLocate={(id) => (setCartOpen(false), showProduct(id))}
+        />
       )}
 
       {suggest2d && (
@@ -251,9 +273,9 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
         </div>
       )}
 
-      {isTouch && phase.kind === 'ready' && <Joystick onChange={(f, s) => runtimeRef.current?.setJoystick(f, s)} />}
+      {isTouch && phase.kind === 'ready' && !product && !cartOpen && <Joystick raised={!!insideData || cartItems.length > 0} onChange={(f, s) => runtimeRef.current?.setJoystick(f, s)} />}
 
-      <p className="pointer-events-none absolute bottom-3 left-3 hidden rounded bg-black/50 px-2 py-1 text-xs text-white sm:block">
+      <p className={`pointer-events-none absolute left-3 hidden rounded bg-black/50 px-2 py-1 text-xs text-white sm:block ${insideData || cartItems.length ? 'bottom-[84px]' : 'bottom-3'}`}>
         W A S D / oklar: yürü · Shift: koş · sürükle: bak · {inside ? 'raflara yaklaş, ürüne tıkla' : 'panoya tıkla: ürün · kapıya yürü: içeri gir'} · kalite: {quality}
       </p>
     </div>
@@ -261,7 +283,7 @@ export function CityClient({ worldSlug, startStore }: { worldSlug: string; start
 }
 
 /** Mobil sanal joystick (sol alt): sürükleme yönü yürüme girdisi olur. */
-function Joystick({ onChange }: { onChange: (forward: number, strafe: number) => void }) {
+function Joystick({ onChange, raised }: { onChange: (forward: number, strafe: number) => void; raised: boolean }) {
   const [knob, setKnob] = useState<[number, number]>([0, 0]);
   const R = 48;
   const move = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -282,7 +304,7 @@ function Joystick({ onChange }: { onChange: (forward: number, strafe: number) =>
   };
   return (
     <div
-      className="absolute bottom-6 left-6 size-32 rounded-full bg-white/20 ring-2 ring-white/40"
+      className={`absolute left-6 size-32 rounded-full bg-white/20 ring-2 ring-white/40 ${raised ? 'bottom-[92px]' : 'bottom-6'}`}
       onPointerDown={(e) => (e.currentTarget.setPointerCapture(e.pointerId), move(e))}
       onPointerMove={(e) => e.buttons && move(e)}
       onPointerUp={end}

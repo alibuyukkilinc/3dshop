@@ -1,4 +1,3 @@
-import { buildScene } from '@dtd/engine-three';
 import { drawBoard } from '@dtd/scene-runtime';
 import {
   BoxGeometry,
@@ -8,6 +7,7 @@ import {
   DirectionalLight,
   HemisphereLight,
   Mesh,
+  type MeshBasicMaterial,
   MeshStandardMaterial,
   type Object3D,
   PlaneGeometry,
@@ -18,7 +18,8 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { formatMinor } from '../format';
-import { type InteriorLayout, SHELF, layoutInterior, productIndexAt } from './interior-layout';
+import { buildShowcases, createCellFrame, roundRect } from './interior-fx';
+import { type InteriorLayout, SHELF, cellCenter, layoutInterior, productIndexAt } from './interior-layout';
 
 /** /api/v1/stores/:slug/interior yanıtı (K64) */
 export interface InteriorProduct {
@@ -73,6 +74,16 @@ interface Face {
   canvas: HTMLCanvasElement;
   tex: Texture;
   dirty: boolean;
+  /** Ürün kimliği → sepetteki adet (tüm yüzlerde ortak) */
+  cart: Map<string, number>;
+}
+
+/** Bir ürünün iç mekândaki yeri: raf hücresi ya da vitrin podyumu */
+export interface ProductSpot {
+  /** Ürünün dünya konumu (hücre ortası ya da podyum kartı) */
+  point: [number, number, number];
+  /** Ürünün baktığı yatay birim yön (bakan kişi bunun önünde durur) */
+  facing: [number, number];
 }
 
 export interface Interior {
@@ -83,8 +94,18 @@ export interface Interior {
   pickables: Object3D[];
   /** Raycast isabetinden ürün kimliği */
   productAt(obj: Object3D, uv: { x: number; y: number } | undefined): string | null;
-  /** Her kare: göz konumuna göre raf ayrıntısı */
-  update(x: number, z: number): void;
+  /** Her kare: göz konumuna göre raf ayrıntısı, efekt canlandırması (t: saniye) */
+  update(x: number, z: number, t: number): void;
+  /** Fare üstündeki ürün: hücre çerçevesi yanar (null: söner); ürün kimliği döner */
+  hover(obj: Object3D | null, uv: { x: number; y: number } | undefined): string | null;
+  /** Seçili ürün: hücresi nabız gibi atan çerçeveyle işaretlenir */
+  select(productId: string | null): void;
+  /** Ürünün yeri (arama/sepetten ürüne yürüme) */
+  locate(productId: string): ProductSpot | null;
+  /** Bölümün ilk raf yüzü (koridor kısayolu) */
+  sectionSpot(section: number): ProductSpot | null;
+  /** Sepetteki ürünler raflarda rozetle görünür */
+  setCart(qty: Map<string, number>): void;
   dispose(): void;
 }
 
@@ -167,6 +188,7 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
   }
 
   // Raf yüzleri: her yüz tek düzlem + tek doku (36 ürün)
+  const cart = new Map<string, number>();
   const faces: Face[] = layout.faces.map((f) => {
     const color = PALETTE[f.section % PALETTE.length]!;
     const canvas = document.createElement('canvas');
@@ -182,7 +204,7 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
     scene.add(mesh);
     // Koridor tabelası: yüzün üstünde, koridora dönük
     scene.add(signMesh(f.label, color, 3.2, 0.5, [f.center[0] + f.side * 0.02, 2.45, f.center[2]], f.side > 0 ? Math.PI / 2 : -Math.PI / 2, own));
-    const face: Face = { mesh, products: f.products, color, center: f.center, hi: false, canvas, tex, dirty: false };
+    const face: Face = { mesh, products: f.products, color, center: f.center, hi: false, canvas, tex, dirty: false, cart };
     drawFace(face);
     mesh.userData.face = face;
     return face;
@@ -197,37 +219,32 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
     scene.add(signMesh(label, color, 2.7, 0.42, [g.x, 2.3, g.z + SHELF.length / 2 + 0.05], 0, own));
   });
 
-  // Öne çıkanlar: dış vitrinle aynı pano (iki yüzlü stand, buildScene)
-  const featuredBuilt = data.featured.length
-    ? buildScene(
-        {
-          schema: 'dtd.scene.v1',
-          units: 'm',
-          background: '#e7e3dc',
-          nodes: data.featured.map((p, i) => ({
-            id: `one-cikan-${i}`,
-            parent: null,
-            transform: { p: [layout.featured[i]!.x, 1.5, layout.featured[i]!.z], r: [0, 0, 0, 1], s: [1, 1, 1] },
-            components: [
-              {
-                type: 'board' as const,
-                width: 2.4,
-                height: 1.8,
-                product_id: p.id,
-                title: p.name.slice(0, 80),
-                price_text: p.price ? formatMinor(p.price.final_minor, p.price.currency) : '',
-                color: opts.accent,
-                image_url: p.image,
-              },
-            ],
-          })),
-        },
-        { shadows: false },
-      )
-    : null;
-  if (featuredBuilt) for (const c of [...featuredBuilt.scene.children]) scene.add(c);
+  // Öne çıkanlar: dönen vitrin podyumları (ışık konisi, parıltı)
+  const showcases = buildShowcases(data.featured, layout.featured, opts.accent, loadImage);
+  scene.add(showcases.root);
 
-  const pickables: Object3D[] = [...faces.map((f) => f.mesh), ...(featuredBuilt ? [...featuredBuilt.nodes.values()] : [])];
+  // Hücre vurgusu: üzerine gelinen (sabit) ve seçili (nabız) ürün
+  const hoverFrame = createCellFrame(opts.accent, SHELF.pitch * 0.98, SHELF.rowHeight * 0.96);
+  const selectFrame = createCellFrame(opts.accent, SHELF.pitch * 1.04, SHELF.rowHeight * 1.02);
+  disposables.push(hoverFrame, selectFrame);
+  scene.add(hoverFrame.mesh, selectFrame.mesh);
+  let selected: string | null = null;
+
+  const where = new Map<string, { face: number; index: number } | { featured: number }>();
+  faces.forEach((f, fi) => f.products.forEach((p, i) => where.set(p.id, { face: fi, index: i })));
+  data.featured.forEach((p, i) => {
+    if (!where.has(p.id)) where.set(p.id, { featured: i });
+  });
+
+  const placeFrame = (m: Mesh, fi: number, index: number) => {
+    const lf = layout.faces[fi]!;
+    const c = cellCenter(lf, index);
+    m.position.set(c[0] + lf.side * 0.012, c[1], c[2]);
+    m.rotation.set(0, lf.side > 0 ? Math.PI / 2 : -Math.PI / 2, 0);
+    m.visible = true;
+  };
+
+  const pickables: Object3D[] = [...faces.map((f) => f.mesh), ...showcases.pickables];
 
   return {
     scene,
@@ -245,7 +262,13 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
       }
       return null;
     },
-    update(x, z) {
+    update(x, z, t) {
+      showcases.tick(t);
+      if (selectFrame.mesh.visible) {
+        const k = 1 + Math.sin(t * 5) * 0.035;
+        selectFrame.mesh.scale.set(k, k, 1);
+        (selectFrame.mesh.material as MeshBasicMaterial).opacity = 0.75 + Math.sin(t * 5) * 0.25;
+      }
       for (const f of faces) {
         const d = Math.hypot(f.center[0] - x, f.center[2] - z);
         if (!f.hi && d < NEAR) setDetail(f, true);
@@ -256,9 +279,62 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
         }
       }
     },
+    hover(obj, uv) {
+      let id: string | null = null;
+      hoverFrame.mesh.visible = false;
+      for (let cur: Object3D | null = obj; cur; cur = cur.parent) {
+        const face = cur.userData.face as Face | undefined;
+        if (face && uv) {
+          const i = productIndexAt(uv.x, uv.y, face.products.length);
+          if (i !== null) {
+            id = face.products[i]!.id;
+            if (id !== selected) placeFrame(hoverFrame.mesh, faces.indexOf(face), i);
+          }
+          break;
+        }
+        if (typeof cur.userData.productId === 'string') {
+          id = cur.userData.productId;
+          break;
+        }
+      }
+      return id;
+    },
+    select(id) {
+      selectFrame.mesh.visible = false;
+      selected = id;
+      const w = id ? where.get(id) : undefined;
+      if (w && 'face' in w) {
+        placeFrame(selectFrame.mesh, w.face, w.index);
+        hoverFrame.mesh.visible = false;
+      }
+    },
+    locate(id) {
+      const w = where.get(id);
+      if (!w) return null;
+      if ('face' in w) {
+        const lf = layout.faces[w.face]!;
+        return { point: cellCenter(lf, w.index), facing: [lf.side, 0] };
+      }
+      const f = layout.featured[w.featured]!;
+      return { point: [f.x, 1.62, f.z], facing: [0, 1] };
+    },
+    sectionSpot(section) {
+      const lf = layout.faces.find((f) => f.section === section);
+      return lf ? { point: lf.center, facing: [lf.side, 0] } : null;
+    },
+    setCart(qty) {
+      const changed = new Set<string>();
+      for (const id of new Set([...cart.keys(), ...qty.keys()])) if (cart.get(id) !== qty.get(id)) changed.add(id);
+      cart.clear();
+      for (const [k, v] of qty) cart.set(k, v);
+      for (const id of changed) {
+        const w = where.get(id);
+        if (w && 'face' in w) redrawCell(faces[w.face]!, w.index);
+      }
+    },
     dispose() {
       for (const f of faces) f.tex.dispose();
-      featuredBuilt?.dispose();
+      showcases.dispose();
       for (const d of disposables) d.dispose();
     },
   };
@@ -298,10 +374,14 @@ function setDetail(f: Face, hi: boolean) {
 function drawFace(f: Face) {
   const ctx = f.canvas.getContext('2d')!;
   ctx.clearRect(0, 0, f.canvas.width, f.canvas.height);
-  f.products.forEach((_, i) => {
-    const cached = f.hi && f.products[i]!.thumb ? images.get(f.products[i]!.thumb!) : undefined;
-    drawCell(f, i, cached && cached !== 'error' && cached.complete && cached.naturalWidth > 0 ? cached : undefined);
-  });
+  f.products.forEach((_, i) => redrawCell(f, i));
+}
+
+/** Hücreyi yeniden çizer (yakındaysa önbellekteki görselle) */
+function redrawCell(f: Face, i: number) {
+  const thumb = f.products[i]!.thumb;
+  const cached = f.hi && thumb ? images.get(thumb) : undefined;
+  drawCell(f, i, cached && cached !== 'error' && cached.complete && cached.naturalWidth > 0 ? cached : undefined);
   f.dirty = true;
 }
 
@@ -320,10 +400,10 @@ function drawCell(f: Face, i: number, img?: HTMLImageElement) {
   const h = ch - pad * 1.2;
   ctx.clearRect(col * cw, row * ch, cw, ch);
   ctx.fillStyle = 'rgba(0,0,0,0.10)';
-  rr(ctx, x + 2, y + 3, w, h, w * 0.06);
+  roundRect(ctx, x + 2, y + 3, w, h, w * 0.06);
   ctx.fill();
   ctx.fillStyle = '#ffffff';
-  rr(ctx, x, y, w, h, w * 0.06);
+  roundRect(ctx, x, y, w, h, w * 0.06);
   ctx.fill();
   const imgH = h * (f.hi ? 0.56 : 0.66);
   if (img) {
@@ -347,6 +427,27 @@ function drawCell(f: Face, i: number, img?: HTMLImageElement) {
   ctx.font = `800 ${ps}px system-ui, sans-serif`;
   ctx.fillStyle = p.in_stock ? f.color : '#94a3b8';
   ctx.fillText(p.in_stock ? price : 'Stokta yok', x + 6, y + h - ps - 6, w - 12);
+  // Sepetteki ürün: köşede adet rozeti (rafta "benim" işareti)
+  const qty = f.cart.get(p.id);
+  if (qty) {
+    const r = Math.round(ch * 0.11);
+    const cx = x + w - r - 4;
+    const cy = y + r + 4;
+    ctx.fillStyle = f.color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(2, r * 0.18);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `800 ${Math.round(r * (qty > 1 ? 0.95 : 1.15))}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(qty > 9 ? '9+' : qty > 1 ? String(qty) : '✓', cx, cy + 1);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'top';
+  }
 }
 
 function signMesh(
@@ -384,16 +485,6 @@ function tileTexture(): CanvasTexture {
   t.colorSpace = SRGBColorSpace;
   t.anisotropy = 8;
   return t;
-}
-
-function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
 }
 
 function clampLines(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lineH: number, max: number) {

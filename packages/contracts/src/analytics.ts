@@ -27,6 +27,10 @@ export const ANALYTICS_EVENTS = {
   ai_question: z.object({ answered: z.boolean() }),
   /** "Sitede satın al" tıklandı (sunucudaki analytics.redirects kaydının istemci tarafı). */
   outbound_click: z.object({ product_id: Uuid, channel: RedirectChannel }),
+  /** Ürün platform sepetine eklendi (3D mağaza içi; K14 pilot sepeti tarayıcıda). */
+  cart_add: z.object({ product_id: Uuid, store_id: Uuid.optional(), surface: Surface, qty: z.number().int().min(1).max(20) }),
+  /** Sepetten "Siparişi tamamla": mağazanın sitesine geçiş başladı (ürün sayısı). */
+  cart_checkout: z.object({ store_id: Uuid.optional(), items: z.number().int().min(1).max(60) }),
 } as const;
 
 export type AnalyticsEventName = keyof typeof ANALYTICS_EVENTS;

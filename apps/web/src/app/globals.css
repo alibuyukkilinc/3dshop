@@ -82,3 +82,95 @@ body {
   border: 1px solid var(--line);
   padding: 0.25em 0.5em;
 }
+
+/* 3D mağaza deneyimi: ürün kartı, sepet çubuğu, sepete uçuş (hareket azaltma tercihine uyar) */
+@keyframes dtd-sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes dtd-bump {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.28) rotate(-6deg);
+  }
+  65% {
+    transform: scale(0.94) rotate(3deg);
+  }
+}
+@keyframes dtd-shine {
+  from {
+    transform: translateX(-130%) skewX(-18deg);
+  }
+  to {
+    transform: translateX(230%) skewX(-18deg);
+  }
+}
+@keyframes dtd-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes dtd-toast {
+  0% {
+    transform: translateY(-14px) scale(0.96);
+    opacity: 0;
+  }
+  10%,
+  88% {
+    transform: none;
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+}
+.dtd-sheet {
+  animation: dtd-sheet-up 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+.dtd-bump {
+  animation: dtd-bump 0.55s ease;
+}
+.dtd-float {
+  animation: dtd-float 3.2s ease-in-out infinite;
+}
+.dtd-shine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  animation: dtd-shine 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+.dtd-toast {
+  animation: dtd-toast 4s ease forwards;
+}
+.dtd-scroll-x {
+  scrollbar-width: none;
+}
+.dtd-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dtd-sheet,
+  .dtd-bump,
+  .dtd-float,
+  .dtd-toast,
+  .dtd-shine::after {
+    animation: none;
+  }
+}

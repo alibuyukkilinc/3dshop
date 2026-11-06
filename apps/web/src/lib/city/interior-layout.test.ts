@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FACE_CAPACITY, SHELF, layoutInterior, productIndexAt } from './interior-layout';
+import { FACE_CAPACITY, SHELF, aislePath, cellCenter, layoutInterior, productIndexAt } from './interior-layout';
 
 const items = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => `${prefix}${i}`);
 
@@ -38,5 +38,37 @@ describe('iç mekân yerleşimi (K64)', () => {
     expect(productIndexAt(0.99, 0.01, 36)).toBe(35);
     expect(productIndexAt(0.5 / SHELF.cols + 1 / SHELF.cols, 0.5, 36)).toBe(SHELF.cols + 1);
     expect(productIndexAt(0.99, 0.01, 20)).toBeNull();
+  });
+
+  it('kendiliğinden yürüme yolu raf ve podyum içinden geçmez (mağaza deneyimi)', () => {
+    const l = layoutInterior([{ label: 'A', products: items(200, 'p') }], 6);
+    const podZ = l.featured[0]!.z;
+    const blocked = (p: [number, number]) => l.obstacles.some((o) => Math.hypot(o.x - p[0], o.z - p[1]) < o.r - 0.05);
+    const walk = (from: [number, number], to: [number, number]) => {
+      let cur = from;
+      for (const pt of aislePath(from, to, l.aisleFront, podZ)) {
+        for (let k = 1; k <= 50; k++) {
+          const q: [number, number] = [cur[0] + ((pt[0] - cur[0]) * k) / 50, cur[1] + ((pt[1] - cur[1]) * k) / 50];
+          expect(blocked(q), `${q}`).toBe(false);
+        }
+        cur = pt;
+      }
+      expect(cur).toEqual(to);
+    };
+    const aisle = (f: (typeof l.faces)[number]): [number, number] => [f.center[0] + f.side * 1.6, f.center[2] + 2.6];
+    const spawn: [number, number] = [l.spawn.x, l.spawn.z];
+    for (const f of l.faces) walk(spawn, aisle(f));
+    walk(aisle(l.faces[0]!), aisle(l.faces[l.faces.length - 1]!));
+    // Raftan vitrin podyumunun önüne
+    walk(aisle(l.faces[1]!), [l.featured[2]!.x, l.featured[2]!.z + 2.3]);
+  });
+
+  it('raf hücresi konumu yüzün yönüne göre (u ilerledikçe +x yüzünde −z)', () => {
+    const f = { center: [1, 1, -10] as [number, number, number], side: 1 as const };
+    const a = cellCenter(f, 0);
+    const b = cellCenter(f, 1);
+    expect(b[2]).toBeLessThan(a[2]);
+    expect(cellCenter({ ...f, side: -1 }, 1)[2]).toBeGreaterThan(cellCenter({ ...f, side: -1 }, 0)[2]);
+    expect(a[1]).toBeGreaterThan(cellCenter(f, SHELF.cols)[1]);
   });
 });

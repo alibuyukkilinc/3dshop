@@ -21,7 +21,8 @@ import {
   WebGLRenderer,
 } from 'three';
 import { type CityDecor, createCityDecor, createStoreSign } from './environment';
-import { type Interior, type InteriorData, buildInterior } from './interior';
+import { type Interior, type InteriorData, type ProductSpot, buildInterior } from './interior';
+import { aislePath, yawTo } from './interior-layout';
 import { type Obstacle, type V2, rideAt, step } from './movement';
 import { PostFx } from './postfx';
 import type { QualitySettings } from './quality';
@@ -56,8 +57,8 @@ export interface CityCallbacks {
   onProduct(productId: string): void;
   /** Giriş kapısına yakın mağaza (≈ 12 m) ya da null */
   onNearStore?(store: StoreRef | null): void;
-  /** İç mekâna girildi (veri) / çıkıldı (null) / yükleniyor (true) */
-  onInterior?(state: InteriorData | null | 'loading'): void;
+  /** İç mekâna girildi (veri + mağaza vurgu rengi) / çıkıldı (null) / yükleniyor */
+  onInterior?(state: InteriorData | null | 'loading', accent?: string): void;
   onRegion(name: string | null): void;
   onFps(avg: number): void;
   onBundles(loaded: Bundle[]): void;
@@ -108,6 +109,14 @@ export class CityRuntime {
   private interior: { built: Interior; store: StoreRef; color: string } | null = null;
   private entering = false;
   private nearStore: StoreRef | null = null;
+  /** İç mekânda ürüne/koridora kendiliğinden yürüme (arama, koridor kısayolu, sepet) */
+  private glide: { pts: V2[]; yaw: number; pitch: number } | null = null;
+  /** Fare imleci (yalnız fare; dokunmatikte üzerine gelme yok): bir sonraki karede ışın atılır */
+  private hoverAt: { x: number; y: number } | null = null;
+  private hovered: string | null = null;
+  /** Sepetteki ürünler (raf rozetleri; iç mekân her kurulduğunda uygulanır) */
+  private cartQty = new Map<string, number>();
+  private selectedProduct: string | null = null;
   /** Mağaza → binadan dışa doğru birim yön (çıkışta oyuncu kapının önüne konur) ve tabela rengi */
   private readonly storeInfo = new Map<string, { out: V2; color: string }>();
 
@@ -197,7 +206,23 @@ export class CityRuntime {
   }
 
   /** Şehir ya da iç mekân karesi: yüksek kalitede son işlemeden geçer */
+  /** Alttan arayüzle örtülen yükseklik (px): görüntü merkezi açık kalan alana kayar (mobil ürün kartı) */
+  setBottomInset(px: number) {
+    this.insetTarget = Math.max(0, px);
+  }
+  private insetTarget = 0;
+  private inset = 0;
+
   private draw(scene: Scene, dt: number) {
+    // Görüntü ofseti yumuşakça izlenir: seçili ürün kartın üstündeki görünür alanın ortasında kalır
+    const ni = this.inset + (this.insetTarget - this.inset) * (1 - Math.exp(-dt * 8));
+    if (Math.abs(ni - this.inset) > 0.1 || (ni !== 0 && !this.camera.view)) {
+      this.inset = Math.abs(ni - this.insetTarget) < 0.5 ? this.insetTarget : ni;
+      const w = this.canvas.clientWidth || window.innerWidth;
+      const h = this.canvas.clientHeight || window.innerHeight;
+      if (this.inset > 0) this.camera.setViewOffset(w, h, 0, this.inset / 2, w, h);
+      else this.camera.clearViewOffset();
+    }
     this.renderer.info.reset();
     if (this.post) this.post.render(scene, this.camera, dt);
     else this.renderer.render(scene, this.camera);
@@ -452,11 +477,14 @@ export class CityRuntime {
       const color = this.storeInfo.get(slug)?.color ?? SIGN_COLORS[0]!;
       const built = buildInterior(data, { environment: this.scene.environment, accent: color });
       this.interior = { built, store, color };
+      built.setCart(this.cartQty);
+      built.select(this.selectedProduct);
       const sp = built.layout.spawn;
       this.pos = [sp.x, sp.z];
       this.yaw = sp.yaw;
       this.pitch = -0.05;
-      this.cb.onInterior?.(data);
+      this.glide = null;
+      this.cb.onInterior?.(data, color);
     } catch {
       this.cb.onInterior?.(null);
     } finally {
@@ -469,6 +497,9 @@ export class CityRuntime {
     if (!this.interior) return;
     const { built, store } = this.interior;
     this.interior = null;
+    this.glide = null;
+    this.hovered = null;
+    this.canvas.style.cursor = '';
     built.dispose();
     const out = this.storeInfo.get(store.slug)?.out ?? [0, 1];
     // Vitrin panolarının (girişten ≈ 4 m) önüne
@@ -479,22 +510,102 @@ export class CityRuntime {
     this.cb.onInterior?.(null);
   }
 
+  /** Sepetteki ürünler: raflarda rozet */
+  setCart(qty: Map<string, number>) {
+    this.cartQty = new Map(qty);
+    this.interior?.built.setCart(this.cartQty);
+  }
+
+  /** Seçili ürün (ürün kartı açık): hücresi nabız gibi atar */
+  selectProduct(id: string | null) {
+    this.selectedProduct = id;
+    this.interior?.built.select(id);
+  }
+
+  /** Ürüne yürü: rafın önünde durup ürüne bakılır. Ürün bu mağazada yoksa false. */
+  focusProduct(id: string): boolean {
+    const spot = this.interior?.built.locate(id);
+    if (!spot) return false;
+    this.walkTo(spot, spot.facing[1] > 0 ? 2.3 : 1.6, 0);
+    return true;
+  }
+
+  /** Koridor kısayolu: bölümün rafına çaprazdan bakan noktaya yürü */
+  focusSection(section: number) {
+    const spot = this.interior?.built.sectionSpot(section);
+    if (spot) this.walkTo(spot, 1.6, 2.6);
+  }
+
+  private walkTo(spot: ProductSpot, dist: number, along: number) {
+    const it = this.interior;
+    if (!it) return;
+    const L = it.built.layout;
+    const b = L.bounds;
+    const target: V2 = [
+      Math.max(b.min[0], Math.min(b.max[0], spot.point[0] + spot.facing[0] * dist)),
+      Math.max(b.min[1], Math.min(b.max[1], spot.point[2] + spot.facing[1] * dist + along)),
+    ];
+    const look: V2 = [spot.point[0], spot.point[2]];
+    const flat = Math.hypot(look[0] - target[0], look[1] - target[1]);
+    this.glide = { pts: aislePath(this.pos, target, L.aisleFront, L.featured[0]?.z ?? null), yaw: yawTo(target, look), pitch: Math.atan2(spot.point[1] - 1.6, flat) };
+  }
+
   private interiorFrame(dt: number) {
     const it = this.interior!;
     const L = it.built.layout;
     const k = (a: string, b: string) => (this.keys.has(a) || this.keys.has(b) ? 1 : 0);
     const forward = k('KeyW', 'ArrowUp') - k('KeyS', 'ArrowDown') + this.joy.forward;
     const strafe = k('KeyD', 'ArrowRight') - k('KeyA', 'ArrowLeft') + this.joy.strafe;
-    // İçeride daha yavaş yürünür (raflar yakın)
-    this.pos = step(this.pos, this.yaw, { forward, strafe }, dt, { speed: this.keys.has('ShiftLeft') ? WALK * 1.4 : WALK * 0.7, bounds: L.bounds, obstacles: L.obstacles });
-    if (this.pos[1] > L.exit.minZ && this.pos[0] > L.exit.minX && this.pos[0] < L.exit.maxX && forward + strafe !== 0) {
-      this.exitStore();
-      return;
+    // Kullanıcı yürümeye başlarsa kendiliğinden yürüme bırakılır
+    if (this.glide && (forward !== 0 || strafe !== 0 || this.drag?.moved)) this.glide = null;
+    if (this.glide) {
+      this.advanceGlide(dt);
+    } else {
+      // İçeride daha yavaş yürünür (raflar yakın)
+      this.pos = step(this.pos, this.yaw, { forward, strafe }, dt, { speed: this.keys.has('ShiftLeft') ? WALK * 1.4 : WALK * 0.7, bounds: L.bounds, obstacles: L.obstacles });
+      if (this.pos[1] > L.exit.minZ && this.pos[0] > L.exit.minX && this.pos[0] < L.exit.maxX && forward + strafe !== 0) {
+        this.exitStore();
+        return;
+      }
     }
-    it.built.update(this.pos[0], this.pos[1]);
+    this.clock += dt;
+    it.built.update(this.pos[0], this.pos[1], this.clock);
     this.camera.position.set(this.pos[0], 1.6, this.pos[1]);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+    // Fare üstündeki ürün: çerçeve ve el imleci (karede bir ışın)
+    if (this.hoverAt) {
+      const hit = this.rayAt(this.hoverAt.x, this.hoverAt.y, 14, it.built.pickables);
+      this.hoverAt = null;
+      const id = it.built.hover(hit?.object ?? null, hit?.uv);
+      if (id !== this.hovered) {
+        this.hovered = id;
+        this.canvas.style.cursor = id ? 'pointer' : '';
+      }
+    }
     this.draw(it.built.scene, dt);
+  }
+
+  /** Yol noktaları boyunca yumuşak yürüme; bakış hedefe döner */
+  private advanceGlide(dt: number) {
+    const g = this.glide!;
+    let left = dt * WALK * 1.25;
+    while (left > 0 && g.pts.length) {
+      const t = g.pts[0]!;
+      const d = Math.hypot(t[0] - this.pos[0], t[1] - this.pos[1]);
+      if (d <= left) {
+        this.pos = t;
+        g.pts.shift();
+        left -= d;
+      } else {
+        this.pos = [this.pos[0] + ((t[0] - this.pos[0]) * left) / d, this.pos[1] + ((t[1] - this.pos[1]) * left) / d];
+        left = 0;
+      }
+    }
+    const a = 1 - Math.exp(-dt * 5);
+    const dy = Math.atan2(Math.sin(g.yaw - this.yaw), Math.cos(g.yaw - this.yaw));
+    this.yaw += dy * a;
+    this.pitch += (g.pitch - this.pitch) * a;
+    if (!g.pts.length && Math.abs(dy) < 0.01 && Math.abs(g.pitch - this.pitch) < 0.01) this.glide = null;
   }
 
   private streamAt = 0;
@@ -539,6 +650,7 @@ export class CityRuntime {
     this.drag = { x: e.clientX, y: e.clientY, id: e.pointerId, moved: false };
   };
   private readonly onMove = (e: PointerEvent) => {
+    if (!this.drag && this.interior && e.pointerType === 'mouse' && e.target === this.canvas) this.hoverAt = { x: e.clientX, y: e.clientY };
     if (!this.drag || e.pointerId !== this.drag.id) return;
     const dx = e.clientX - this.drag.x;
     const dy = e.clientY - this.drag.y;
@@ -553,20 +665,36 @@ export class CityRuntime {
     this.drag = null;
   };
 
+  private readonly ray = new Raycaster();
+  private rayAt(clientX: number, clientY: number, far: number, objects: Object3D[]) {
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.ray.setFromCamera(ndc, this.camera);
+    this.ray.far = far;
+    return this.ray.intersectObjects(objects, true)[0];
+  }
+
   /** Dokunulan ürün panosu (userData.productId taşır) */
   private pick(clientX: number, clientY: number) {
+    if (this.interior) {
+      const hit = this.rayAt(clientX, clientY, 14, this.interior.built.pickables);
+      const pid = hit ? this.interior.built.productAt(hit.object, hit.uv) : null;
+      if (pid) {
+        // Dokunulan ürüne dön (yürümeden): ürün görüntünün ortasına gelir
+        const spot = this.interior.built.locate(pid);
+        if (spot) {
+          const look: V2 = [spot.point[0], spot.point[2]];
+          this.glide = { pts: [], yaw: yawTo(this.pos, look), pitch: Math.atan2(spot.point[1] - 1.6, Math.hypot(look[0] - this.pos[0], look[1] - this.pos[1])) };
+        }
+        this.cb.onProduct(pid);
+      }
+      return;
+    }
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     const ray = new Raycaster();
     ray.setFromCamera(ndc, this.camera);
     ray.far = 40;
-    if (this.interior) {
-      ray.far = 14;
-      const hit = ray.intersectObjects(this.interior.built.pickables, true)[0];
-      const pid = hit ? this.interior.built.productAt(hit.object, hit.uv) : null;
-      if (pid) this.cb.onProduct(pid);
-      return;
-    }
     for (const h of ray.intersectObjects([...this.regions.values()].map((r) => r.root), true)) {
       const pid = findProduct(h.object);
       if (pid) return this.cb.onProduct(pid);
@@ -606,6 +734,7 @@ export class CityRuntime {
     this.renderer.setSize(w, h, false);
     this.post?.setSize(w, h);
     this.camera.aspect = w / h;
+    if (this.inset > 0) this.camera.setViewOffset(w, h, 0, this.inset / 2, w, h);
     this.camera.updateProjectionMatrix();
   };
 }

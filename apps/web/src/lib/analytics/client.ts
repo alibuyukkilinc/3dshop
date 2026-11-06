@@ -165,6 +165,10 @@ export function toGa4(name: AnalyticsEventName, p: Record<string, unknown>): [st
       return ['view_item', { items: [{ item_id: p.product_id, affiliation: p.store_id }], surface: p.surface }];
     case 'search':
       return ['search', { search_term: p.q }];
+    case 'cart_add':
+      return ['add_to_cart', { items: [{ item_id: p.product_id, affiliation: p.store_id, quantity: p.qty }], surface: p.surface }];
+    case 'cart_checkout':
+      return ['begin_checkout', { affiliation: p.store_id, items_count: p.items }];
     default:
       return [name, p];
   }

@@ -11,6 +11,8 @@ const TZ = 'Europe/Istanbul';
 const SUBJECT_SQL = `CASE name
   WHEN 'product_view' THEN product_id::text
   WHEN 'outbound_click' THEN product_id::text
+  WHEN 'cart_add' THEN product_id::text
+  WHEN 'cart_checkout' THEN store_id::text
   WHEN 'store_enter' THEN store_id::text
   WHEN 'search' THEN props->>'q'
   WHEN 'region_enter' THEN props->>'region'

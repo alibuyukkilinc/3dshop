@@ -54,6 +54,8 @@ export interface InteriorLayout<T> {
   exit: { minX: number; maxX: number; minZ: number };
   bounds: { min: V2; max: V2 };
   obstacles: Obstacle[];
+  /** Gondolların girişe bakan ucu (z): koridorlar bunun gerisinde */
+  aisleFront: number;
 }
 
 export function layoutInterior<T>(sections: { label: string; products: T[] }[], featuredCount: number): InteriorLayout<T> {
@@ -93,7 +95,8 @@ export function layoutInterior<T>(sections: { label: string; products: T[] }[], 
   for (const g of gondolas) {
     for (let z = g.z - SHELF.length / 2 + 0.3; z <= g.z + SHELF.length / 2 - 0.3; z += 0.5) obstacles.push({ x: g.x, z, r: 0.5 });
   }
-  for (const f of featured) for (const dx of [-0.8, 0, 0.8]) obstacles.push({ x: f.x + dx, z: f.z, r: 0.35 });
+  // Vitrin podyumu (yarıçap 0,66 m)
+  for (const f of featured) obstacles.push({ x: f.x, z: f.z, r: 0.8 });
 
   return {
     width,
@@ -105,7 +108,48 @@ export function layoutInterior<T>(sections: { label: string; products: T[] }[], 
     exit: { minX: -1.1, maxX: 1.1, minZ: -0.55 },
     bounds: { min: [-width / 2 + 0.45, -depth + 0.45], max: [width / 2 - 0.45, -0.3] },
     obstacles,
+    aisleFront: -FRONT_ZONE,
   };
+}
+
+/**
+ * Bir raf hücresinin dünya konumu (yüz düzleminde, hücre ortası). Yüz düzlemi rotateY(±90°) ile döndürülür:
+ * +x yüzünde doku u'su −z yönüne, −x yüzünde +z yönüne ilerler.
+ */
+export function cellCenter(face: { center: [number, number, number]; side: 1 | -1 }, index: number): [number, number, number] {
+  const col = index % SHELF.cols;
+  const row = Math.floor(index / SHELF.cols);
+  const lx = (col + 0.5) * SHELF.pitch - (SHELF.cols * SHELF.pitch) / 2;
+  const ly = (SHELF.rows * SHELF.rowHeight) / 2 - (row + 0.5) * SHELF.rowHeight;
+  return [face.center[0], face.center[1] + ly, face.center[2] + (face.side > 0 ? -lx : lx)];
+}
+
+/** Bir noktaya bakan yaw (kamera −z'ye bakarken yaw = 0) */
+export function yawTo(from: V2, to: V2): number {
+  return Math.atan2(-(to[0] - from[0]), -(to[1] - from[1]));
+}
+
+/** Vitrin podyumlarının ortadaki yürüme yolu: |x| bunun altında podyum yok (ilk podyum 2,6 m, yarıçap 0,8) */
+const CENTER_WALK = 1.3;
+const PODIUM_CLEAR = 0.95;
+
+/**
+ * Mağaza içinde kendiliğinden yürüme yolu (arama, koridor kısayolu): raf ve podyum içinden geçilmez. Her uç
+ * önce "ana yol"a (gondol ön ucunun 1 m önü) çıkar; podyum sırasının önündeyse ortadaki yürüme yolundan
+ * geçer. Aynı koridorda ya da ikisi de podyumların önündeyse doğrudan gidilir.
+ */
+export function aislePath(from: V2, to: V2, frontZ: number, podiumZ: number | null = null): V2[] {
+  const lane = frontZ + 1;
+  const inAisles = (p: V2) => p[1] < frontZ + 0.3;
+  const front = (p: V2) => podiumZ !== null && p[1] > podiumZ + PODIUM_CLEAR;
+  if (inAisles(from) && inAisles(to) && Math.abs(from[0] - to[0]) < 0.4) return [to];
+  if (front(from) && front(to)) return [to];
+  if (!inAisles(from) && !inAisles(to) && !front(from) && !front(to)) return [to];
+  // Uçtan ana yola: podyumların önündeyse ortaya kayıp ortadan geçer
+  const toLane = (p: V2): V2[] => (front(p) && Math.abs(p[0]) > CENTER_WALK ? [[0, p[1]], [0, lane]] : [[p[0], lane]]);
+  const pts = [...toLane(from), ...toLane(to).reverse(), to];
+  // Ardışık aynı noktalar ayıklanır
+  return pts.filter((p, k) => k === 0 || Math.hypot(p[0] - pts[k - 1]![0], p[1] - pts[k - 1]![1]) > 0.01);
 }
 
 /** Yüz düzlemindeki doku koordinatından (u, v ∈ 0…1) ürün sırası; boş hücre null */
