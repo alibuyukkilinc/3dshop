@@ -35,6 +35,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
     title: store.name,
     description: `${store.name}: ${store.product_count} ürün. Fiyat ve stok mağazanın sitesinden; satın alma mağazanın sitesinde.`,
     alternates: { canonical: `/magaza/${store.slug}` },
+    // Mağazanın kendi favicon'u (kaynak site)
+    ...(store.icon_url ? { icons: { icon: store.icon_url } } : {}),
   };
 }
 
@@ -78,7 +80,14 @@ export default async function StorePage({ params, searchParams }: { params: Para
         </Link>{' '}
         › <span aria-current="page">{store.name}</span>
       </nav>
-      <h1 className="mt-2 text-3xl font-semibold">{store.name}</h1>
+      <div className="mt-2 flex items-center gap-4">
+        {store.logo_url && (
+          <span className="flex h-16 items-center rounded-lg border border-line bg-white px-3">
+            <img src={store.logo_url} alt={`${store.name} logosu`} className="max-h-12 max-w-[180px] object-contain" />
+          </span>
+        )}
+        <h1 className="text-3xl font-semibold">{store.name}</h1>
+      </div>
       <p className="mt-1 text-sm text-muted">{store.product_count} ürün</p>
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[14rem_1fr]">

@@ -101,7 +101,8 @@ export function buildShowcases(products: ShowcaseProduct[], spots: { x: number; 
     cv.width = cv.height = 512;
     drawCard(cv, null, accent);
     const tex = own(canvasTex(cv));
-    const cardMat = own(new MeshStandardMaterial({ map: tex, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.28, roughness: 0.35, transparent: true, alphaTest: 0.05 }));
+    // Ürün görseli kaynak renginde (ışık ve film tonlaması soldurmaz)
+    const cardMat = own(new MeshBasicMaterial({ map: tex, color: '#f2f2f2', toneMapped: false, transparent: true, alphaTest: 0.05 }));
     const front = new Mesh(cardGeo, cardMat);
     const back = new Mesh(cardGeo, cardMat);
     back.rotation.y = Math.PI;

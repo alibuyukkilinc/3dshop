@@ -59,6 +59,8 @@ export class CommerceAdminService {
         slug: s.slug,
         store_type: s.storeType,
         status: s.status,
+        logo_url: s.logoUrl,
+        icon_url: s.iconUrl,
         version: s.version,
         source_site_ids: s.sources.map((x) => x.sourceSiteId),
       })),

@@ -23,6 +23,9 @@ export interface Store {
   id: string;
   slug: string;
   name: string;
+  /** Kaynak sitenin logosu ve ikonu (https, kaynak CDN) */
+  logo_url?: string | null;
+  icon_url?: string | null;
   company: { display_name: string; website: string | null };
   product_count: number;
 }

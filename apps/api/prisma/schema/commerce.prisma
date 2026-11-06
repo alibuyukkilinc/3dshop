@@ -30,6 +30,9 @@ model Store {
   storeType String        @default("multi_brand") @map("store_type")
   /// draft | active | archived
   status    String        @default("draft")
+  /// Mağaza logosu ve ikonu (favicon): kaynak sitenin CDN adresi (https); siteden çekilir ya da elle girilir
+  logoUrl   String?       @map("logo_url")
+  iconUrl   String?       @map("icon_url")
   createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   version   Int           @default(1)

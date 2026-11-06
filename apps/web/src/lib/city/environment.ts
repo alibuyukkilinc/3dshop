@@ -26,6 +26,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Obstacle } from './movement';
 import { type SurfaceKind, type SurfaceKit, applyWorldUv } from './surfaces';
 import { facadeTexture, leafTexture } from './textures';
+import { drawStoreSign, loadCorsImage } from './store-sign';
 
 /**
  * Şehir ortamı (görsel iyileştirme 1–2): bölgeler arası zemin ve cadde, bordür, şerit çizgileri, yaya
@@ -652,6 +653,8 @@ export function createStoreSign(
   store: { name: string; entrance: [number, number, number] },
   buildings: Object3D[],
   color: string,
+  /** Kaynak sitenin logosu (gelince tabela logolu yeniden çizilir) */
+  logo?: Promise<string | null>,
 ): { mesh: Mesh; dispose(): void } | null {
   const [ex, , ez] = store.entrance;
   const box = new Box3();
@@ -673,6 +676,14 @@ export function createStoreSign(
   const tex = new CanvasTexture(cv);
   tex.colorSpace = SRGBColorSpace;
   tex.anisotropy = 8;
+  let disposed = false;
+  void logo
+    ?.then((url) => (url ? loadCorsImage(url) : null))
+    .then((img) => {
+      if (!img || disposed) return;
+      drawStoreSign(cv.getContext('2d')!, cv.width, cv.height, { name: store.name, color, logo: img });
+      tex.needsUpdate = true;
+    });
   const geo = new BoxGeometry(width, height, 0.12);
   const side = new MeshStandardMaterial({ color, roughness: 0.6 });
   const face = new MeshStandardMaterial({ map: tex, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.35, roughness: 0.5 });
@@ -684,6 +695,7 @@ export function createStoreSign(
   return {
     mesh,
     dispose() {
+      disposed = true;
       geo.dispose();
       side.dispose();
       face.dispose();

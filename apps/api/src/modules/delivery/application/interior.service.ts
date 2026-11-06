@@ -76,7 +76,7 @@ export class InteriorService {
     // Öne çıkanlar: alaka sıralamasının başı, stokta ve görselli olanlar (giriş vitrini)
     const featured = products.filter((p) => p.in_stock && p.thumb).slice(0, 6).map((p) => ({ ...p, image: p.thumb!.replace(/_low\./, '_medium.') }));
     return {
-      store: { id: store.id, slug: store.slug, name: store.name, company: store.company.display_name },
+      store: { id: store.id, slug: store.slug, name: store.name, company: store.company.display_name, logo_url: store.logo_url, icon_url: store.icon_url },
       total,
       truncated: total > items.length,
       featured,

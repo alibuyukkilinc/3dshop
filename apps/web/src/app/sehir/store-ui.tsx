@@ -64,9 +64,15 @@ export function StoreHud({
     <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col gap-2 p-3">
       <div className="flex items-center gap-2">
         <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-2xl bg-white/95 py-1.5 pr-3 pl-1.5 text-black shadow-lg backdrop-blur">
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl text-base font-bold text-white" style={{ background: accent }} aria-hidden>
-            {data.store.name.slice(0, 1).toLocaleUpperCase('tr')}
-          </span>
+          {data.store.icon_url ? (
+            <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-xl bg-white ring-1 ring-gray-200" aria-hidden>
+              <img src={data.store.icon_url} alt="" className="size-7 object-contain" />
+            </span>
+          ) : (
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl text-base font-bold text-white" style={{ background: accent }} aria-hidden>
+              {data.store.name.slice(0, 1).toLocaleUpperCase('tr')}
+            </span>
+          )}
           <span className="min-w-0">
             <span className="block truncate text-sm leading-tight font-semibold">{data.store.name}</span>
             <span className="block truncate text-[11px] leading-tight text-gray-600">

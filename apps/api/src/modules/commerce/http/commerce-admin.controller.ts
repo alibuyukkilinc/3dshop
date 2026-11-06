@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { adminContext, parseInput } from '../../../infra/http/admin-request.js';
 import { AdminGuard, CurrentAdminSession, RequireRoles, type ResolvedSession } from '../../identity/public/index.js';
 import { CommerceAdminService } from '../application/commerce-admin.service.js';
+import { StoreBrandingService } from '../application/store-branding.js';
 
 const Version = z.number().int().positive();
 const Name = z.string().trim().min(2).max(200);
@@ -16,6 +17,8 @@ const CompanyPatchSchema = z.object({
   website: z.url().max(300).nullable().optional(),
 });
 const StorePatchSchema = z.object({ version: Version, name: Name.optional(), slug: z.string().trim().max(80).optional() });
+const HttpsUrl = z.url().max(500).regex(/^https:\/\//, 'https adresi gerekli');
+const BrandingSchema = z.object({ logo_url: HttpsUrl.nullable().optional(), icon_url: HttpsUrl.nullable().optional() });
 const BrandCreateSchema = z.object({ name: z.string().trim().min(1).max(120), slug: z.string().trim().max(80).optional() });
 const BrandPatchSchema = z.object({
   version: Version,
@@ -27,7 +30,10 @@ const BrandPatchSchema = z.object({
 @Controller('admin/v1/commerce')
 @UseGuards(AdminGuard)
 export class CommerceAdminController {
-  constructor(private readonly service: CommerceAdminService) {}
+  constructor(
+    private readonly service: CommerceAdminService,
+    private readonly branding: StoreBrandingService,
+  ) {}
 
   @Get('companies')
   async companies() {
@@ -54,6 +60,21 @@ export class CommerceAdminController {
     @Req() req: Request,
   ) {
     return this.service.updateStore(id, parseInput(StorePatchSchema, body), adminContext(s.admin.id, req));
+  }
+
+  /** Logo ve ikonu firmanın web sitesinden yeniden oku */
+  @Post('stores/:id/branding/refresh')
+  @RequireRoles('platform_admin')
+  refreshBranding(@Param('id', ParseUUIDPipe) id: string, @CurrentAdminSession() s: ResolvedSession, @Req() req: Request) {
+    return this.branding.refresh(id, adminContext(s.admin.id, req));
+  }
+
+  /** Logo/ikon adresini elle ver (null: kaldır) */
+  @Patch('stores/:id/branding')
+  @RequireRoles('platform_admin')
+  async setBranding(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown, @CurrentAdminSession() s: ResolvedSession, @Req() req: Request) {
+    const b = parseInput(BrandingSchema, body);
+    return { changed: await this.branding.set(id, { logo: b.logo_url, icon: b.icon_url }, adminContext(s.admin.id, req)) };
   }
 
   @Get('brands')

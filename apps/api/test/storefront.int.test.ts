@@ -82,7 +82,7 @@ describe.skipIf(!hasDatabase)('herkese açık katalog API (F2.3)', () => {
     const list = await get('/stores');
     expect(list.headers['cache-control']).toBe('public, max-age=60');
     expect(list.body.items).toEqual([
-      { id: store.id, slug: 'esensolarmarket', name: 'Esen Solar Market', company: { display_name: 'Esen Solar', website: 'https://esensolarmarket.com' }, product_count: 3 },
+      { id: store.id, slug: 'esensolarmarket', name: 'Esen Solar Market', logo_url: null, icon_url: null, company: { display_name: 'Esen Solar', website: 'https://esensolarmarket.com' }, product_count: 3 },
     ]);
 
     const s = (await get('/stores/esensolarmarket')).body;

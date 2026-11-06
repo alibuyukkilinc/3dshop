@@ -26,6 +26,11 @@ export default async function HomePage() {
                 href={`/magaza/${s.slug}`}
                 className="block h-full rounded-lg border border-line bg-surface p-4 hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
+                {s.logo_url ? (
+                  <span className="mb-3 flex h-14 items-center rounded-md bg-white px-3">
+                    <img src={s.logo_url} alt="" className="max-h-11 max-w-full object-contain" loading="lazy" />
+                  </span>
+                ) : null}
                 <p className="font-medium">{s.name}</p>
                 <p className="mt-1 text-sm text-muted">{s.product_count} ürün</p>
               </Link>

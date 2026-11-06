@@ -119,6 +119,11 @@ export class CityRuntime {
   private selectedProduct: string | null = null;
   /** Mağaza → binadan dışa doğru birim yön (çıkışta oyuncu kapının önüne konur) ve tabela rengi */
   private readonly storeInfo = new Map<string, { out: V2; color: string }>();
+  /** Mağaza logoları (kaynak siteden; açık mağaza listesi): tabelalar gelince logolu çizilir */
+  private readonly logos: Promise<Map<string, string>> = fetch('/api/v1/stores')
+    .then((r) => (r.ok ? (r.json() as Promise<{ items: { slug: string; logo_url?: string | null }[] }>) : { items: [] }))
+    .then((j) => new Map(j.items.flatMap((s) => (s.logo_url ? [[s.slug, s.logo_url] as [string, string]] : []))))
+    .catch(() => new Map<string, string>());
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -372,7 +377,7 @@ export class CityRuntime {
     for (const st of bundle.stores) {
       const hash = [...st.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 0);
       const color = SIGN_COLORS[hash % SIGN_COLORS.length]!;
-      const sign = createStoreSign(st, buildings, color);
+      const sign = createStoreSign(st, buildings, color, this.logos.then((m) => m.get(st.slug) ?? null));
       // Dışa yön: tabela (bina cephesi) → giriş; tabela yoksa +z
       const out: V2 = sign ? norm([st.entrance[0] - sign.mesh.position.x, st.entrance[2] - sign.mesh.position.z]) : [0, 1];
       this.storeInfo.set(st.slug, { out, color });

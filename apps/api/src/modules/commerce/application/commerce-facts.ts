@@ -14,6 +14,9 @@ export interface PublicStore {
   id: string;
   slug: string;
   name: string;
+  /** Kaynak sitenin logosu ve ikonu (https, kaynak CDN); yoksa null */
+  logo_url: string | null;
+  icon_url: string | null;
   company: { display_name: string; website: string | null };
 }
 
@@ -35,12 +38,12 @@ export class CommerceFacts {
       orderBy: { name: 'asc' },
       include: { company: { select: { displayName: true, website: true } } },
     });
-    return rows.map((s) => ({ id: s.id, slug: s.slug, name: s.name, company: { display_name: s.company.displayName, website: s.company.website } }));
+    return rows.map(toPublic);
   }
 
   async storeBySlug(slug: string): Promise<PublicStore | null> {
     const s = await this.prisma.store.findUnique({ where: { slug }, include: { company: { select: { displayName: true, website: true } } } });
-    return s ? { id: s.id, slug: s.slug, name: s.name, company: { display_name: s.company.displayName, website: s.company.website } } : null;
+    return s ? toPublic(s) : null;
   }
 
   async brands(ids: string[]): Promise<{ id: string; slug: string; name: string }[]> {
@@ -52,4 +55,8 @@ export class CommerceFacts {
     const b = await this.prisma.brand.findUnique({ where: { slug }, select: { id: true, slug: true, name: true, status: true } });
     return b && b.status === 'active' ? { id: b.id, slug: b.slug, name: b.name } : null;
   }
+}
+
+function toPublic(s: { id: string; slug: string; name: string; logoUrl: string | null; iconUrl: string | null; company: { displayName: string; website: string | null } }): PublicStore {
+  return { id: s.id, slug: s.slug, name: s.name, logo_url: s.logoUrl, icon_url: s.iconUrl, company: { display_name: s.company.displayName, website: s.company.website } };
 }

@@ -17,6 +17,7 @@
     "admin:create": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/admin-create.ts",
     "postinstall": "prisma generate",
     "sources": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/sources.ts",
+    "stores": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/stores.ts",
     "world": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/world.ts",
     "assets-import": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/assets-import.ts",
     "scenes-seed": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/scenes-seed.ts",

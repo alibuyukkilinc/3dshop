@@ -7,7 +7,7 @@ import {
   DirectionalLight,
   HemisphereLight,
   Mesh,
-  type MeshBasicMaterial,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   type Object3D,
   PlaneGeometry,
@@ -19,6 +19,7 @@ import {
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { formatMinor } from '../format';
 import { buildShowcases, createCellFrame, roundRect } from './interior-fx';
+import { drawStoreSign, loadCorsImage } from './store-sign';
 import { type InteriorLayout, SHELF, cellCenter, layoutInterior, productIndexAt } from './interior-layout';
 
 /** /api/v1/stores/:slug/interior yanıtı (K64) */
@@ -30,7 +31,7 @@ export interface InteriorProduct {
   thumb: string | null;
 }
 export interface InteriorData {
-  store: { id: string; slug: string; name: string; company: string };
+  store: { id: string; slug: string; name: string; company: string; logo_url?: string | null; icon_url?: string | null };
   total: number;
   truncated: boolean;
   featured: (InteriorProduct & { image: string })[];
@@ -43,8 +44,14 @@ const WALL_H = 4.2;
 /** Raf yüzü bu mesafede yüksek çözünürlüğe geçer, şu mesafede geri döner (m) */
 const NEAR = 6.5;
 const FAR = 9.5;
-/** Yakın yüz: hücre başına ≈ 256 × 228 px (önceki 170 × 152 bulanıktı) */
-const HI = { w: 3072, h: 684 };
+/** Dokunmatik (telefon/tablet): bellek ve indirme dar; masaüstü daha yüksek çözünürlük */
+const COARSE = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+/** Yakın yüz: hücre başına masaüstünde ≈ 341 × 304 px, dokunmatikte ≈ 256 × 228 px */
+const HI = COARSE ? { w: 3072, h: 684 } : { w: 4096, h: 912 };
+/** Raf etiketleri (ön kenardaki fiyat rayı): üç kat, kat başına bir şerit */
+const LABEL = COARSE ? { w: 2048, band: 80 } : { w: 3072, band: 112 };
+/** Etiket rayı: raf üst yüzünün 3,5 cm altından 6 cm üstüne */
+const RAIL = { below: 0.035, above: 0.06, front: 0.445 };
 /** Aynı anda yüksek çözünürlükte en çok bu kadar raf yüzü (koridorda karşılıklı iki yüz + komşular) */
 const MAX_HI = 4;
 const LO = { w: 768, h: 171 };
@@ -191,45 +198,89 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
   daylight.rotation.y = Math.PI;
   scene.add(daylight);
   scene.add(signMesh('ÇIKIŞ', '#15803d', 1.4, 0.36, [0, 2.95, -0.02], 0, own));
-  // Arka duvarda mağaza adı
-  scene.add(signMesh(data.store.name, opts.accent, Math.min(9, W * 0.6), Math.min(9, W * 0.6) / 6, [0, 2.75, -D + 0.03], 0, own));
-
-  // Gondollar: taban, sırt panosu, raflar, uç panolar, üst başlık — hepsi tek geometri
-  const parts: BufferGeometry[] = [];
-  for (const g of layout.gondolas) {
-    const L = SHELF.length;
-    parts.push(new BoxGeometry(0.92, 0.12, L).translate(g.x, 0.06, g.z));
-    parts.push(new BoxGeometry(0.05, 1.95, L).translate(g.x, 0.12 + 1.95 / 2, g.z));
-    for (const y of SHELF.levels) for (const s of [-1, 1]) parts.push(new BoxGeometry(0.42, 0.035, L).translate(g.x + s * 0.235, y - 0.0175, g.z));
-    for (const s of [-1, 1]) parts.push(new BoxGeometry(0.92, 2.0, 0.04).translate(g.x, 1.0, g.z + (s * L) / 2));
+  // Arka duvarda mağaza tabelası: kaynak sitenin logosu (yoksa adı)
+  const backSign = signMesh(data.store.name, opts.accent, Math.min(8, W * 0.55), Math.min(8, W * 0.55) / 4, [0, 2.7, -D + 0.03], 0, own);
+  scene.add(backSign);
+  if (data.store.logo_url) {
+    void loadCorsImage(data.store.logo_url).then((img) => {
+      const mat = backSign.material as MeshStandardMaterial;
+      const tex = mat.map as CanvasTexture | null;
+      if (!img || !tex) return;
+      const cv = tex.image as HTMLCanvasElement;
+      drawStoreSign(cv.getContext('2d')!, cv.width, cv.height, { name: data.store.name, color: opts.accent, logo: img });
+      tex.needsUpdate = true;
+    });
   }
-  if (parts.length) {
-    const shelves = new Mesh(own(mergeGeometries(parts)!), own(new MeshStandardMaterial({ color: '#6b7178', roughness: 0.5, metalness: 0.15 })));
-    scene.add(shelves);
-    for (const p of parts) p.dispose();
+
+  // Gondollar (gerçek market rafı): koyu çerçeve, taban süpürgeliği ve etiket rayları; açık metal tablalar;
+  // delikli (pegboard) sırt panosu. Malzeme başına tek birleşik geometri (3 çizim çağrısı)
+  const frame: BufferGeometry[] = [];
+  const boards: BufferGeometry[] = [];
+  const backs: BufferGeometry[] = [];
+  const L = SHELF.length;
+  const topY = SHELF.levels[2] + SHELF.rowHeight + 0.12;
+  for (const g of layout.gondolas) {
+    frame.push(new BoxGeometry(0.94, 0.13, L).translate(g.x, 0.065, g.z));
+    backs.push(new BoxGeometry(0.04, topY - 0.13, L - 0.06).translate(g.x, 0.13 + (topY - 0.13) / 2, g.z));
+    for (const y of SHELF.levels) {
+      for (const s of [-1, 1]) {
+        boards.push(new BoxGeometry(0.42, 0.03, L - 0.06).translate(g.x + s * 0.235, y - 0.015, g.z));
+        // Etiket rayı: tablanın ön kenarında, fiyat etiketinin arkası
+        frame.push(new BoxGeometry(0.022, RAIL.below + RAIL.above, L - 0.06).translate(g.x + s * RAIL.front, y + (RAIL.above - RAIL.below) / 2, g.z));
+      }
+    }
+    // Uç dikmeler ve üst kuşak
+    for (const e of [-1, 1]) frame.push(new BoxGeometry(0.94, topY, 0.05).translate(g.x, topY / 2, g.z + (e * L) / 2));
+    frame.push(new BoxGeometry(0.1, 0.06, L).translate(g.x, topY + 0.03, g.z));
+  }
+  const pegTex = own(pegboardTexture());
+  pegTex.repeat.set(L / 0.5, (topY - 0.13) / 0.5);
+  for (const [geos, mat] of [
+    [frame, own(new MeshStandardMaterial({ color: '#3a3f45', roughness: 0.55, metalness: 0.3 }))],
+    [boards, own(new MeshStandardMaterial({ color: '#b9bec4', roughness: 0.4, metalness: 0.35 }))],
+    [backs, own(new MeshStandardMaterial({ map: pegTex, roughness: 0.7, metalness: 0.15 }))],
+  ] as const) {
+    if (!geos.length) continue;
+    scene.add(new Mesh(own(mergeGeometries([...geos])!), mat));
+    for (const p of geos) p.dispose();
   }
 
   // Raf yüzleri: her yüz tek düzlem + tek doku (36 ürün)
   const cart = new Map<string, number>();
+  const labelMeshes: Mesh[] = [];
   const faces: Face[] = layout.faces.map((f) => {
     const color = PALETTE[f.section % PALETTE.length]!;
     const canvas = document.createElement('canvas');
     canvas.width = LO.w;
     canvas.height = LO.h;
     const tex = makeTex(canvas);
-    // Kartlar kendi ışığını hafifçe taşır: açıya göre grileşmez, görseller canlı kalır
-    const mat = new MeshStandardMaterial({ map: tex, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.22, roughness: 0.85, transparent: true, alphaTest: 0.02 });
+    // Ürün görselleri ışıksız ve tonlamasız: kaynak sitedeki renkler aynen (ışıklı malzeme + film
+    // tonlaması görselleri soldurüyordu). Hafif gri katsayı beyazın parlamasını önler.
+    const mat = new MeshBasicMaterial({ map: tex, color: '#f0f0f0', toneMapped: false, transparent: true, alphaTest: 0.02 });
     const geo = new PlaneGeometry(SHELF.cols * SHELF.pitch, SHELF.rows * SHELF.rowHeight).rotateY(f.side > 0 ? Math.PI / 2 : -Math.PI / 2);
     own(geo);
     own(mat);
     const mesh = new Mesh(geo, mat);
     mesh.position.set(...f.center);
     scene.add(mesh);
+    // Fiyat etiketleri: rafın ön kenarındaki rayda, kat başına bir şerit (ad + fiyat)
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = LABEL.w;
+    labelCanvas.height = LABEL.band * SHELF.rows;
+    drawLabels(labelCanvas, f.products, color);
+    const labelTex = own(makeTex(labelCanvas));
+    const label = new Mesh(own(labelGeometry(f.side)), own(new MeshBasicMaterial({ map: labelTex, toneMapped: false, color: '#f2f2f2' })));
+    const gx = f.center[0] - f.side * SHELF.faceOffset;
+    label.position.set(gx + f.side * (RAIL.front + 0.0125), 0, f.center[2]);
+    scene.add(label);
     // Koridor tabelası: yüzün üstünde, koridora dönük
     scene.add(signMesh(f.label, color, 3.2, 0.5, [f.center[0] + f.side * 0.02, 2.45, f.center[2]], f.side > 0 ? Math.PI / 2 : -Math.PI / 2, own));
     const face: Face = { mesh, products: f.products, color, center: f.center, hi: false, canvas, tex, dirty: false, cart };
     drawFace(face);
     mesh.userData.face = face;
+    // Etikete dokunmak da ürünü açar (aynı u/v → hücre eşlemesi)
+    label.userData.face = face;
+    labelMeshes.push(label);
     return face;
   });
 
@@ -267,7 +318,7 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
     m.visible = true;
   };
 
-  const pickables: Object3D[] = [...faces.map((f) => f.mesh), ...showcases.pickables];
+  const pickables: Object3D[] = [...faces.map((f) => f.mesh), ...labelMeshes, ...showcases.pickables];
 
   return {
     scene,
@@ -417,7 +468,10 @@ function redrawCell(f: Face, i: number) {
   f.dirty = true;
 }
 
-/** Bir ürün kartı: beyaz kart, görsel, ad (yakında), renkli fiyat */
+/**
+ * Bir raf hücresi: rafta duran ürün paketi. Beyaz paket önyüzü rafın üst yüzüne oturur (alt kenarı etiket
+ * rayının arkasında kalır), görsel paketi doldurur; ad ve fiyat ön kenardaki etikettedir.
+ */
 function drawCell(f: Face, i: number, img?: HTMLImageElement) {
   const ctx = f.canvas.getContext('2d')!;
   const cw = f.canvas.width / SHELF.cols;
@@ -425,47 +479,53 @@ function drawCell(f: Face, i: number, img?: HTMLImageElement) {
   const col = i % SHELF.cols;
   const row = Math.floor(i / SHELF.cols);
   const p = f.products[i]!;
-  const pad = cw * 0.06;
-  const x = col * cw + pad;
-  const y = row * ch + pad * 0.6;
-  const w = cw - pad * 2;
-  const h = ch - pad * 1.2;
   ctx.clearRect(col * cw, row * ch, cw, ch);
-  ctx.fillStyle = 'rgba(0,0,0,0.10)';
-  roundRect(ctx, x + 2, y + 3, w, h, w * 0.06);
+  // Paket: hücre genişliğinin %86'sı, yüksekliğin %84'ü; tabanı kat tabanında
+  const w = cw * 0.86;
+  const h = ch * 0.84;
+  const x = col * cw + (cw - w) / 2;
+  const y = row * ch + ch - h;
+  // Arkadaki gölge (derinlik hissi)
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  roundRect(ctx, x + w * 0.03, y + h * 0.02, w, h, w * 0.035);
   ctx.fill();
   ctx.fillStyle = '#ffffff';
-  roundRect(ctx, x, y, w, h, w * 0.06);
+  roundRect(ctx, x, y, w, h, w * 0.035);
   ctx.fill();
-  const imgH = h * (f.hi ? 0.6 : 0.66);
+  const pad = w * 0.05;
+  // Alt %12'si rayın arkasında kalır: görsel onun üstünde
+  const ih0 = h * 0.86 - pad * 2;
   if (img) {
+    ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    const k = Math.min((w - 8) / img.naturalWidth, (imgH - 8) / img.naturalHeight);
+    const k = Math.min((w - pad * 2) / img.naturalWidth, ih0 / img.naturalHeight);
     const iw = img.naturalWidth * k;
     const ih = img.naturalHeight * k;
-    ctx.drawImage(img, x + (w - iw) / 2, y + 4 + (imgH - 8 - ih) / 2, iw, ih);
+    ctx.drawImage(img, x + (w - iw) / 2, y + pad + (ih0 - ih) / 2, iw, ih);
   } else {
-    ctx.fillStyle = '#eef1f5';
-    ctx.fillRect(x + 6, y + 6, w - 12, imgH - 10);
+    ctx.fillStyle = '#e9edf2';
+    roundRect(ctx, x + pad, y + pad, w - pad * 2, ih0, w * 0.03);
+    ctx.fill();
   }
-  ctx.textBaseline = 'top';
-  if (f.hi) {
-    ctx.fillStyle = '#0f172a';
-    const fs = Math.round(ch * 0.085);
-    ctx.font = `600 ${fs}px system-ui, sans-serif`;
-    clampLines(ctx, p.name, x + 6, y + imgH + 2, w - 12, Math.round(fs * 1.15), 2);
+  // Paket üstünde ışık parıltısı (düz kağıt değil, ambalaj hissi)
+  const g = ctx.createLinearGradient(x, y, x + w, y + h);
+  g.addColorStop(0, 'rgba(255,255,255,0.18)');
+  g.addColorStop(0.45, 'rgba(255,255,255,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.06)');
+  ctx.fillStyle = g;
+  roundRect(ctx, x, y, w, h, w * 0.035);
+  ctx.fill();
+  if (!p.in_stock) {
+    ctx.fillStyle = 'rgba(241,245,249,0.6)';
+    roundRect(ctx, x, y, w, h, w * 0.035);
+    ctx.fill();
   }
-  const price = p.price ? formatMinor(p.price.final_minor, p.price.currency) : 'Fiyat sitede';
-  const ps = Math.round(ch * (f.hi ? 0.1 : 0.13));
-  ctx.font = `800 ${ps}px system-ui, sans-serif`;
-  ctx.fillStyle = p.in_stock ? f.color : '#94a3b8';
-  ctx.fillText(p.in_stock ? price : 'Stokta yok', x + 6, y + h - ps - 6, w - 12);
   // Sepetteki ürün: köşede adet rozeti (rafta "benim" işareti)
   const qty = f.cart.get(p.id);
   if (qty) {
-    const r = Math.round(ch * 0.11);
-    const cx = x + w - r - 4;
-    const cy = y + r + 4;
+    const r = Math.round(ch * 0.1);
+    const cx = x + w - r * 0.7;
+    const cy = y + r * 0.7;
     ctx.fillStyle = f.color;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -481,6 +541,89 @@ function drawCell(f: Face, i: number, img?: HTMLImageElement) {
     ctx.textAlign = 'start';
     ctx.textBaseline = 'top';
   }
+}
+
+/** Etiket rayı geometrisi: kat başına bir şerit; şerit r, etiket dokusunun r. bandına (üst kat = 0) */
+function labelGeometry(side: 1 | -1): BufferGeometry {
+  const width = SHELF.cols * SHELF.pitch;
+  const h = RAIL.below + RAIL.above;
+  const quads: BufferGeometry[] = [];
+  for (let r = 0; r < SHELF.rows; r++) {
+    const level = SHELF.levels[SHELF.rows - 1 - r]!;
+    const q = new PlaneGeometry(width, h);
+    const uv = q.getAttribute('uv');
+    for (let k = 0; k < uv.count; k++) uv.setY(k, 1 - (r + 1 - uv.getY(k)) / SHELF.rows);
+    q.translate(0, level + (RAIL.above - RAIL.below) / 2, 0);
+    quads.push(q);
+  }
+  const g = mergeGeometries(quads)!;
+  for (const q of quads) q.dispose();
+  return g.rotateY(side > 0 ? Math.PI / 2 : -Math.PI / 2);
+}
+
+/** Raf etiketleri: beyaz etiket, sol kenarda bölüm rengi, ürün adı (tek satır) ve büyük fiyat */
+function drawLabels(cv: HTMLCanvasElement, products: InteriorProduct[], color: string) {
+  const ctx = cv.getContext('2d')!;
+  const cw = cv.width / SHELF.cols;
+  const bh = cv.height / SHELF.rows;
+  ctx.fillStyle = '#2f3439';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  products.forEach((p, i) => {
+    const col = i % SHELF.cols;
+    const row = Math.floor(i / SHELF.cols);
+    const x = col * cw + cw * 0.05;
+    const y = row * bh + bh * 0.1;
+    const w = cw * 0.9;
+    const h = bh * 0.8;
+    ctx.fillStyle = p.in_stock ? '#ffffff' : '#e5e7eb';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = p.in_stock ? color : '#94a3b8';
+    ctx.fillRect(x, y, w * 0.035, h);
+    const tx = x + w * 0.07;
+    const tw = w * 0.9;
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#334155';
+    ctx.font = `600 ${Math.round(h * 0.27)}px system-ui, sans-serif`;
+    let name = p.name;
+    if (ctx.measureText(name).width > tw) {
+      while (name.length > 3 && ctx.measureText(`${name}…`).width > tw) name = name.slice(0, -1);
+      name = `${name.trimEnd()}…`;
+    }
+    ctx.fillText(name, tx, y + h * 0.08);
+    ctx.font = `800 ${Math.round(h * 0.46)}px system-ui, sans-serif`;
+    ctx.fillStyle = p.in_stock ? '#0f172a' : '#64748b';
+    const price = !p.in_stock ? 'Stokta yok' : p.price ? formatMinor(p.price.final_minor, p.price.currency) : 'Fiyat sitede';
+    ctx.fillText(price, tx, y + h * 0.42, tw);
+    if (p.in_stock && p.price && p.price.list_minor > p.price.final_minor) {
+      // İndirimli: sağ üstte bölüm renginde küçük işaret
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x + w, y);
+      ctx.lineTo(x + w - h * 0.4, y);
+      ctx.lineTo(x + w, y + h * 0.4);
+      ctx.fill();
+    }
+  });
+}
+
+/** Delikli metal sırt panosu (pegboard): 0,5 m'lik karo, 2,5 cm aralıklı delikler */
+function pegboardTexture(): CanvasTexture {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const ctx = cv.getContext('2d')!;
+  ctx.fillStyle = '#5d646c';
+  ctx.fillRect(0, 0, 128, 128);
+  ctx.fillStyle = '#2b2f34';
+  for (let y = 3.2; y < 128; y += 6.4) for (let x = 3.2; x < 128; x += 6.4) {
+    ctx.beginPath();
+    ctx.arc(x, y, 1.15, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const t = new CanvasTexture(cv);
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 16;
+  return t;
 }
 
 function signMesh(
@@ -543,24 +686,4 @@ function woodTexture(): CanvasTexture {
   return t;
 }
 
-function clampLines(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lineH: number, max: number) {
-  const words = text.split(/\s+/);
-  let line = '';
-  let n = 0;
-  for (let i = 0; i < words.length; i++) {
-    const test = line ? `${line} ${words[i]}` : words[i]!;
-    if (ctx.measureText(test).width > maxW && line) {
-      if (n === max - 1) {
-        let l = line;
-        while (ctx.measureText(`${l}…`).width > maxW && l.length > 1) l = l.slice(0, -1);
-        ctx.fillText(`${l}…`, x, y + n * lineH);
-        return;
-      }
-      ctx.fillText(line, x, y + n * lineH);
-      n++;
-      line = words[i]!;
-    } else line = test;
-  }
-  if (line) ctx.fillText(line, x, y + n * lineH);
-}
 
