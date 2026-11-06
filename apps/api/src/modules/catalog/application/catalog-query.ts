@@ -134,6 +134,44 @@ export class CatalogQuery {
     };
   }
 
+  /**
+   * 3D iç mekân koridorları (K64): her ürüne tek bir grup etiketi. Önce platform birincil kategorisinin kökü
+   * (eşleme yapılmışsa), yoksa ürünün kaynak kategorilerinden bu ürün kümesinde en kalabalık olanı (büyük
+   * gruplar oluşsun, ürün tek koridorda dursun). Hiçbiri yoksa null.
+   */
+  async groupLabels(productIds: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (productIds.length === 0) return out;
+    const [primary, cats, sources] = await Promise.all([
+      this.prisma.productCategory.findMany({ where: { productId: { in: productIds }, isPrimary: true }, select: { productId: true, catalogCategoryId: true } }),
+      this.prisma.catalogCategory.findMany({ where: { status: 'active' }, include: { i18n: { where: { locale: LOCALE } } } }),
+      this.prisma.productSourceCategory.findMany({
+        where: { productId: { in: productIds } },
+        select: { productId: true, sourceCategory: { select: { id: true, name: true } } },
+      }),
+    ]);
+    const byId = new Map(cats.map((c) => [c.id, c]));
+    const root = (id: string) => {
+      let c = byId.get(id);
+      for (let g = 0; c?.parentId && byId.has(c.parentId) && g < 20; g++) c = byId.get(c.parentId);
+      return c ? (c.i18n[0]?.name ?? c.slug) : null;
+    };
+    for (const p of primary) {
+      const name = root(p.catalogCategoryId);
+      if (name) out.set(p.productId, name);
+    }
+    const size = new Map<string, number>();
+    for (const s of sources) size.set(s.sourceCategory.id, (size.get(s.sourceCategory.id) ?? 0) + 1);
+    const best = new Map<string, { id: string; name: string }>();
+    for (const s of sources) {
+      if (out.has(s.productId)) continue;
+      const cur = best.get(s.productId);
+      if (!cur || size.get(s.sourceCategory.id)! > size.get(cur.id)!) best.set(s.productId, s.sourceCategory);
+    }
+    for (const [pid, c] of best) out.set(pid, c.name.trim());
+    return out;
+  }
+
   async categoryBySlug(slug: string) {
     const c = await this.prisma.catalogCategory.findUnique({ where: { slug }, include: { i18n: { where: { locale: LOCALE } } } });
     return c && c.status === 'active' ? { id: c.id, slug: c.slug, name: c.i18n[0]?.name ?? c.slug } : null;

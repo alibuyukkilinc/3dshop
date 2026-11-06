@@ -5,6 +5,7 @@ import { parseInput } from '../../../infra/http/admin-request.js';
 import { KEY_RE } from '../../../infra/storage/blob-store.js';
 import { AdminGuard, RequireRoles } from '../../identity/public/index.js';
 import { BundlesService } from '../application/bundles.service.js';
+import { InteriorService } from '../application/interior.service.js';
 import { LiveService } from '../application/live.service.js';
 
 const Ids = z.object({
@@ -20,7 +21,17 @@ export class DeliveryController {
   constructor(
     private readonly bundles: BundlesService,
     private readonly live: LiveService,
+    private readonly interiors: InteriorService,
   ) {}
+
+  /** Mağaza iç mekânı (K64): 3d kanalında görünen tüm ürünler, koridor gruplarıyla */
+  @Get('stores/:slug/interior')
+  @Header('Cache-Control', 'public, max-age=60')
+  async interior(@Param('slug') slug: string) {
+    const r = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) && slug.length <= 80 ? await this.interiors.interior(slug) : null;
+    if (!r) throw new NotFoundException({ error: 'not_found', message: 'Mağaza bulunamadı.' });
+    return r;
+  }
 
   @Get('worlds/:slug')
   @Header('Cache-Control', 'public, max-age=60')

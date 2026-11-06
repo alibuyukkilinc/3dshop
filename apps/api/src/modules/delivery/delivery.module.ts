@@ -9,13 +9,14 @@ import { SceneModule } from '../scene/public/index.js';
 import { WorldModule } from '../world/public/index.js';
 import { BundlesService } from './application/bundles.service.js';
 import { DeliveryEventHandler } from './application/delivery-events.js';
+import { InteriorService } from './application/interior.service.js';
 import { LiveService } from './application/live.service.js';
 import { DeliveryAdminController, DeliveryController } from './http/delivery.controller.js';
 
 @Module({
   imports: [AssetsModule, CatalogModule, CommerceModule, IdentityModule, PlacementModule, RulesModule, SceneModule, WorldModule],
   controllers: [DeliveryController, DeliveryAdminController],
-  providers: [BundlesService, LiveService, DeliveryEventHandler],
+  providers: [BundlesService, LiveService, DeliveryEventHandler, InteriorService],
   exports: [BundlesService, DeliveryEventHandler],
 })
 export class DeliveryModule {}
