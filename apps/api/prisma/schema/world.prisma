@@ -1,0 +1,219 @@
+// Modül: modules/world. Dünya, bölge, parsel, yer; gerçek (coğrafi) ve sanal konum; ulaşım (A3, K40).
+// Sahipler (mağaza, şube) başka modüllerdedir: yalnız ref_type + ref_id (K32). Cortex: mekan.
+
+model WorldType {
+  /// central_city | turkey_map | local_world | store_interior
+  code         String  @id
+  name         String
+  configSchema Json    @default("{}") @map("config_schema")
+  worlds       World[]
+
+  @@map("world_types")
+  @@schema("world")
+}
+
+model World {
+  id                  String        @id @db.Uuid
+  typeCode            String        @map("type_code")
+  type                WorldType     @relation(fields: [typeCode], references: [code])
+  slug                String        @unique
+  name                String
+  /// draft | active | archived
+  status              String        @default("draft")
+  /// x-z sınırları (m): {min:[x,z], max:[x,z]}
+  bounds              Json          @default("{}")
+  cellSizeM           Int           @default(64) @map("cell_size_m")
+  defaultSpawnPlaceId String?       @map("default_spawn_place_id") @db.Uuid
+  /// scene modülündeki sahne (kimlikle)
+  sceneId             String?       @map("scene_id") @db.Uuid
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  version             Int           @default(1)
+  regions             Region[]
+  transitLines        TransitLine[]
+
+  @@map("worlds")
+  @@schema("world")
+}
+
+model Region {
+  id      String   @id @db.Uuid
+  worldId String   @map("world_id") @db.Uuid
+  world   World    @relation(fields: [worldId], references: [id])
+  slug    String
+  name    String
+  /// district | street | plaza | interior_floor
+  kind    String   @default("district")
+  /// x-z çokgen [[x,z],…]
+  polygon Json     @default("[]")
+  sort    Int      @default(0)
+  status  String   @default("active")
+  /// Bölgenin sahnesi (scene modülü, kimlikle); bölge paketi bundan derlenir (K48)
+  sceneId String?  @map("scene_id") @db.Uuid
+  parcels Parcel[]
+
+  @@unique([worldId, slug])
+  @@map("regions")
+  @@schema("world")
+}
+
+model Parcel {
+  id                String   @id @db.Uuid
+  regionId          String   @map("region_id") @db.Uuid
+  region            Region   @relation(fields: [regionId], references: [id])
+  code              String
+  polygon           Json     @default("[]")
+  /// S | M | L
+  capacity          String   @default("M")
+  allowedStoreTypes String[] @default([]) @map("allowed_store_types")
+  /// empty | reserved | occupied
+  status            String   @default("empty")
+
+  @@unique([regionId, code])
+  @@map("parcels")
+  @@schema("world")
+}
+
+model Place {
+  id        String        @id @db.Uuid
+  /// store_entrance | branch | station | portal | showcase | landmark | spawn
+  kind      String
+  name      String
+  status    String        @default("active")
+  /// Sahibi: store, branch… (başka modül, kimlikle)
+  refType   String?       @map("ref_type")
+  refId     String?       @map("ref_id") @db.Uuid
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  version   Int           @default(1)
+  geo       PlaceGeo?
+  virtual   PlaceVirtual?
+
+  @@index([refType, refId])
+  @@index([kind])
+  @@map("places")
+  @@schema("world")
+}
+
+/// Gerçek konum. PostGIS varsa ayrıca location geography(Point,4326) + GiST (göçte koşullu, K40).
+model PlaceGeo {
+  placeId      String    @id @map("place_id") @db.Uuid
+  place        Place     @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  lat          Decimal   @db.Decimal(9, 6)
+  lng          Decimal   @db.Decimal(9, 6)
+  addressLine  String?   @map("address_line")
+  provinceCode String?   @map("province_code")
+  districtCode String?   @map("district_code")
+  countryCode  String    @default("TR") @map("country_code") @db.Char(2)
+  /// exact | street | district_center | province_center
+  precision    String
+  /// manual | admin_area_centroid | geocoder
+  source       String
+  verifiedAt   DateTime? @map("verified_at") @db.Timestamptz(3)
+
+  @@index([provinceCode, districtCode])
+  @@map("place_geo")
+  @@schema("world")
+}
+
+/// Sanal konum: dünya içinde x/y/z (m), hücre ızgarası bölge akışının birimi.
+model PlaceVirtual {
+  placeId  String  @id @map("place_id") @db.Uuid
+  place    Place   @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  worldId  String  @map("world_id") @db.Uuid
+  regionId String? @map("region_id") @db.Uuid
+  parcelId String? @map("parcel_id") @db.Uuid
+  x        Float
+  y        Float
+  z        Float
+  rotY     Float   @default(0) @map("rot_y")
+  cellX    Int     @map("cell_x")
+  cellZ    Int     @map("cell_z")
+
+  @@index([worldId, cellX, cellZ])
+  @@map("place_virtual")
+  @@schema("world")
+}
+
+model PlaceLink {
+  id            String  @id @db.Uuid
+  fromPlaceId   String  @map("from_place_id") @db.Uuid
+  toPlaceId     String  @map("to_place_id") @db.Uuid
+  /// map_to_world | branch_to_storefront | portal_pair
+  kind          String
+  bidirectional Boolean @default(true)
+
+  @@unique([fromPlaceId, toPlaceId, kind])
+  @@map("place_links")
+  @@schema("world")
+}
+
+/// Türkiye il/ilçe referansı. Pilotta yalnız 5 il ve 5 ilçe merkezi elle (kullanıcı kararı 2026-11-06).
+model AdminArea {
+  code       String  @id
+  /// province | district
+  level      String
+  name       String
+  parentCode String? @map("parent_code")
+  lat        Decimal @db.Decimal(9, 6)
+  lng        Decimal @db.Decimal(9, 6)
+  source     String
+
+  @@map("admin_areas")
+  @@schema("world")
+}
+
+model TransitLine {
+  id       String           @id @db.Uuid
+  worldId  String           @map("world_id") @db.Uuid
+  world    World            @relation(fields: [worldId], references: [id])
+  code     String
+  name     String
+  /// tram | shuttle
+  kind     String           @default("tram")
+  color    String           @default("#d97706")
+  /// x-z çoklu çizgi [[x,z],…]
+  path     Json             @default("[]")
+  status   String           @default("active")
+  stations TransitStation[]
+
+  @@unique([worldId, code])
+  @@map("transit_lines")
+  @@schema("world")
+}
+
+model TransitStation {
+  id      String      @id @db.Uuid
+  lineId  String      @map("line_id") @db.Uuid
+  line    TransitLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  placeId String      @map("place_id") @db.Uuid
+  sort    Int
+  dwellS  Int         @default(8) @map("dwell_s")
+
+  @@unique([lineId, sort])
+  @@map("transit_stations")
+  @@schema("world")
+}
+
+model Portal {
+  id           String  @id @db.Uuid
+  fromPlaceId  String  @map("from_place_id") @db.Uuid
+  toWorldId    String  @map("to_world_id") @db.Uuid
+  toPlaceId    String? @map("to_place_id") @db.Uuid
+  /// region_gate | world_gate | map_pin
+  kind         String
+  requiresLoad Boolean @default(true) @map("requires_load")
+
+  @@map("portals")
+  @@schema("world")
+}
+
+model FastTravelTarget {
+  id         String @id @db.Uuid
+  placeId    String @unique @map("place_id") @db.Uuid
+  label      String
+  /// store | station | district
+  kind       String
+  unlockRule Json   @default("{}") @map("unlock_rule")
+
+  @@map("fast_travel_targets")
+  @@schema("world")
+}

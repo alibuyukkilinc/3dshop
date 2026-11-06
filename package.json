@@ -18,7 +18,8 @@
     "db:deploy": "pnpm --filter @dtd/api db:deploy",
     "admin:create": "pnpm --filter @dtd/api admin:create",
     "format": "prettier --write .",
-    "sources": "pnpm --filter @dtd/api sources"
+    "sources": "pnpm --filter @dtd/api sources",
+    "world": "pnpm --filter @dtd/api world"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
