@@ -19,9 +19,11 @@
     "sources": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/sources.ts",
     "world": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/world.ts",
     "assets-import": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/assets-import.ts",
-    "scenes-seed": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/scenes-seed.ts"
+    "scenes-seed": "node --env-file-if-exists=../../.env --import @swc-node/register/esm-register scripts/scenes-seed.ts",
+    "guide:eval": "node --import @swc-node/register/esm-register scripts/guide-eval.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.6.0",
     "@dtd/contracts": "workspace:*",
     "@dtd/scene-runtime": "workspace:*",
     "@gltf-transform/core": "^4.5.1",

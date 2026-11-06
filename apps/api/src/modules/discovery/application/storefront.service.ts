@@ -42,12 +42,12 @@ export class StorefrontService {
   }
 
   /** Arama (search kanalı): görünen ürünler arasında; mağaza gizliyse ürün de gizli (mağaza kuralı ürüne uygulanır). */
-  async search(q: string, page: number) {
-    const ids = [...(await this.visibility.visibleIds('product', 'search'))];
-    const r = await this.catalog.search(q, ids, (page - 1) * PAGE_SIZE, PAGE_SIZE);
+  async search(q: string, page: number, channel: Channel = 'search', pageSize = PAGE_SIZE) {
+    const ids = [...(await this.visibility.visibleIds('product', channel))];
+    const r = await this.catalog.search(q, ids, (page - 1) * pageSize, pageSize);
     const stores = await this.commerce.publicStores([...new Set(r.items.map((i) => i.store_id))]);
     const storeBy = new Map(stores.map((s) => [s.id, { slug: s.slug, name: s.name }]));
-    return { q, total: r.total, page, page_size: PAGE_SIZE, items: r.items.map((i) => ({ ...i, store: storeBy.get(i.store_id) ?? null })) };
+    return { q, total: r.total, page, page_size: pageSize, items: r.items.map((i) => ({ ...i, store: storeBy.get(i.store_id) ?? null })) };
   }
 
   /**

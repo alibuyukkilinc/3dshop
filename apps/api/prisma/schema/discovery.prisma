@@ -1,0 +1,19 @@
+// Modül: modules/discovery. AI rehber sohbetleri (K52): 30 gün saklanır, kişisel veri istenmez.
+// Ürün/mağaza başka modüllerdedir: burada yalnız kimlikleri metin içinde geçer (K32).
+
+/// Rehber sohbeti. messages: Claude Messages API biçiminde tam geçmiş (araç çağrıları dahil, yalnız eklenir).
+model AiSession {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @map("updated_at") @db.Timestamptz(3)
+  /// Kullanıcı soru sayısı (oturum başına sınır)
+  turns     Int      @default(0)
+  messages  Json
+  /// Araç sonuçlarında görülen ürün kimlikleri: cevaptaki her ürün bunlardan biri olmalı (K52)
+  seenProductIds String[] @default([]) @map("seen_product_ids") @db.Uuid
+  model     String
+
+  @@index([updatedAt])
+  @@map("ai_sessions")
+  @@schema("discovery")
+}

@@ -20,6 +20,7 @@ import { BundlesService, DeliveryEventHandler, DeliveryModule } from './modules/
 import { AnalyticsModule, ConversionEventHandler, EventsService } from './modules/analytics/public/index.js';
 import { PlacementEventHandler, PlacementModule, PlacementService } from './modules/placement/public/index.js';
 import { ChangesetsService, PublishingModule } from './modules/publishing/public/index.js';
+import { DiscoveryModule, GuideService } from './modules/discovery/public/index.js';
 import { RulesModule, VisibilityEventHandler, VisibilityService } from './modules/rules/public/index.js';
 
 /**
@@ -27,7 +28,7 @@ import { RulesModule, VisibilityEventHandler, VisibilityService } from './module
  * işler. Kuyruk (Redis + BullMQ, K34) F0.6'da sunucuya Redis kurulunca eklenir; o zamana kadar outbox
  * yoklamayla teslim edilir.
  */
-@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule, IntegrationModule, RulesModule, PublishingModule, AssetsModule, PlacementModule, DeliveryModule, AnalyticsModule] })
+@Module({ imports: [DbModule, PlatformModule, AuditModule, OpsWorkerModule, IntegrationModule, RulesModule, PublishingModule, AssetsModule, PlacementModule, DeliveryModule, AnalyticsModule, DiscoveryModule] })
 class WorkerModule {}
 
 const OUTBOX_POLL_MS = 1_000;
@@ -74,13 +75,16 @@ async function bootstrap() {
     }
   };
   await maintenance();
-  // Platform olayları (K37): bölümler, 13 ay saklama, günlük özet (bugün + dün). Saatte bir.
+  // Platform olayları (K37): bölümler, 13 ay saklama, günlük özet (bugün + dün); rehber sohbet saklaması. Saatte bir.
   const events = app.get(EventsService);
+  const guide = app.get(GuideService);
   const eventsJob = async () => {
     try {
       const dropped = await events.maintainPartitions();
       if (dropped.length) logger.log(`Saklama süresi dolan olay bölümleri silindi: ${dropped.join(', ')}`);
       await events.summarizeRecent();
+      // AI rehber sohbetleri 30 gün (K52)
+      await guide.purgeExpired();
     } catch (e) {
       await reporter.report(e, 'job', { job: 'analytics_events' });
     }

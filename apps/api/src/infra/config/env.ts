@@ -44,6 +44,15 @@ const EnvSchema = z.object({
 
   /** Worker kaynak siteleri zamanlı eşitler (F1.1). Yerelde canlı sitelere istek atmamak için false yapılabilir. */
   INTEGRATION_SYNC_ENABLED: bool.default(true),
+
+  /** AI rehber (F5.2, K52). Anahtar yoksa rehber kapalıdır; site klasik aramayla çalışır. Asla loglanmaz. */
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  /** Rehber modeli (K52: C1 denemesiyle seçilir) */
+  AI_GUIDE_MODEL: z.string().min(1).default('claude-opus-5-5'),
+  /** Maliyet sınırı: tüm ziyaretçiler için günlük en çok soru (aşılınca klasik aramaya düşer) */
+  AI_GUIDE_DAILY_MAX: z.coerce.number().int().min(0).default(2000),
+  /** Ziyaretçi (IP özeti) başına dakikada en çok soru */
+  AI_GUIDE_PER_MINUTE: z.coerce.number().int().min(1).default(6),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

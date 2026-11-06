@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { ConsentSettingsButton } from './analytics';
 
-export function SiteHeader() {
+/** guide: AI rehber açıksa menüde görünür (F5.2). */
+export function SiteHeader({ guide = false }: { guide?: boolean }) {
   return (
     <header className="border-b border-line bg-surface">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
@@ -38,6 +39,13 @@ export function SiteHeader() {
                 Harita
               </Link>
             </li>
+            {guide && (
+              <li>
+                <Link href="/rehber" className="hover:underline">
+                  Rehber
+                </Link>
+              </li>
+            )}
           </ul>
         </nav>
       </div>

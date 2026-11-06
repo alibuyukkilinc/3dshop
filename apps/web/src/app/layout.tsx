@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Analytics } from '../components/analytics';
 import { SiteFooter, SiteHeader } from '../components/site-header';
 import { apiGet } from '../lib/api';
+import { guideEnabled } from '../lib/guide';
 import { isIndexable, siteUrl } from '../lib/site';
 import './globals.css';
 
@@ -32,7 +33,7 @@ async function ga4Id(): Promise<string | null> {
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const ga4 = await ga4Id();
+  const [ga4, guide] = await Promise.all([ga4Id(), guideEnabled()]);
   return (
     <html lang="tr">
       <body>
@@ -41,7 +42,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         </a>
         {/* Sayfalardan önce: sayfa bileşenlerinin olayları sağlayıcı kurulduktan sonra çalışır */}
         <Analytics ga4Id={ga4} />
-        <SiteHeader />
+        <SiteHeader guide={guide} />
         <div id="icerik">{children}</div>
         <SiteFooter />
       </body>
