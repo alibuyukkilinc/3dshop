@@ -185,9 +185,21 @@ export class CityRuntime {
     void this.stream();
   }
 
+  /**
+   * Çizim çözünürlüğü. Mağaza içi sahne hafiftir (≈ 60 çizim çağrısı): kalite düşük olsa da en az 1,5×
+   * çizilir, ürün görselleri ve yazılar net kalır.
+   */
+  private applyPixelRatio() {
+    const dpr = this.interior ? Math.max(this.settings.dpr, 1.5) : this.settings.dpr;
+    const next = Math.min(window.devicePixelRatio || 1, dpr);
+    if (next === this.renderer.getPixelRatio()) return;
+    this.renderer.setPixelRatio(next);
+    this.resize();
+  }
+
   applySettings(s: QualitySettings) {
     this.settings = s;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, s.dpr));
+    this.applyPixelRatio();
     this.renderer.shadowMap.enabled = s.shadows;
     this.sun.castShadow = s.shadows;
     // Hava perspektifi: sis ufuk rengine birleşir; uzak silüet binaları pusa gömülür
@@ -477,6 +489,7 @@ export class CityRuntime {
       const color = this.storeInfo.get(slug)?.color ?? SIGN_COLORS[0]!;
       const built = buildInterior(data, { environment: this.scene.environment, accent: color });
       this.interior = { built, store, color };
+      this.applyPixelRatio();
       built.setCart(this.cartQty);
       built.select(this.selectedProduct);
       const sp = built.layout.spawn;
@@ -497,6 +510,7 @@ export class CityRuntime {
     if (!this.interior) return;
     const { built, store } = this.interior;
     this.interior = null;
+    this.applyPixelRatio();
     this.glide = null;
     this.hovered = null;
     this.canvas.style.cursor = '';

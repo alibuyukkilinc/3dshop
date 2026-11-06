@@ -41,26 +41,44 @@ export interface InteriorData {
 const PALETTE = ['#0f766e', '#1d4ed8', '#b45309', '#7c3aed', '#be123c', '#047857', '#0e7490', '#a16207', '#4338ca', '#475569'];
 const WALL_H = 4.2;
 /** Raf yüzü bu mesafede yüksek çözünürlüğe geçer, şu mesafede geri döner (m) */
-const NEAR = 7.5;
-const FAR = 11;
-const HI = { w: 2048, h: 456 };
+const NEAR = 6.5;
+const FAR = 9.5;
+/** Yakın yüz: hücre başına ≈ 256 × 228 px (önceki 170 × 152 bulanıktı) */
+const HI = { w: 3072, h: 684 };
+/** Aynı anda yüksek çözünürlükte en çok bu kadar raf yüzü (koridorda karşılıklı iki yüz + komşular) */
+const MAX_HI = 4;
 const LO = { w: 768, h: 171 };
+
+/** Yakın raf hücresi için kaynak CDN'in orta boy görseli (_low ≈ 200 px yakında bulanık) */
+function mediumOf(thumb: string): string {
+  return thumb.replace(/_low\.(\w+)$/, '_medium.$1');
+}
 
 /** Görsel önbelleği: aynı küçük görsel bir kez indirilir (kaynak CDN CORS açık; K41) */
 const images = new Map<string, HTMLImageElement | 'error'>();
-function loadImage(url: string, onReady: (img: HTMLImageElement) => void) {
+function loadImage(url: string, onReady: (img: HTMLImageElement) => void, onError?: () => void) {
   const c = images.get(url);
-  if (c === 'error') return;
+  if (c === 'error') return onError?.();
   if (c) {
     if (c.complete && c.naturalWidth > 0) onReady(c);
-    else c.addEventListener('load', () => onReady(c), { once: true });
+    else {
+      c.addEventListener('load', () => onReady(c), { once: true });
+      if (onError) c.addEventListener('error', onError, { once: true });
+    }
     return;
   }
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.decoding = 'async';
   img.addEventListener('load', () => onReady(img), { once: true });
-  img.addEventListener('error', () => images.set(url, 'error'), { once: true });
+  img.addEventListener(
+    'error',
+    () => {
+      images.set(url, 'error');
+      onError?.();
+    },
+    { once: true },
+  );
   images.set(url, img);
   img.src = url;
 }
@@ -112,29 +130,33 @@ export interface Interior {
 export function buildInterior(data: InteriorData, opts: { environment: Texture | null; accent: string }): Interior {
   const layout = layoutInterior(data.sections, data.featured.length);
   const scene = new Scene();
-  scene.background = new Color('#e7e3dc');
+  scene.background = new Color('#6f7378');
   scene.environment = opts.environment;
-  scene.environmentIntensity = 0.5;
+  scene.environmentIntensity = 0.3;
   const disposables: { dispose(): void }[] = [];
   const own = <T extends { dispose(): void }>(x: T) => (disposables.push(x), x);
   const { width: W, depth: D } = layout;
 
-  // Işık: iç mekân aydınlık ve gölgesiz (performans); tavandan yönlü ışık hacim verir. Yarıküre ölçülü:
-  // fazlası her yüzü eşitleyip sahneyi düzleştirir (yüksek kalitede derinliği ortam kapanması da verir)
-  scene.add(new HemisphereLight('#ffffff', '#b9b0a2', 1.05));
-  const key = new DirectionalLight('#fffaf0', 1.6);
+  // Işık: sıcak mağaza aydınlatması, gölgesiz (performans). Koyu tavan ve antrasit raflar beyaz ürün
+  // kartlarını öne çıkarır; yarıküre ölçülü (fazlası her yüzü eşitleyip sahneyi soluklaştırır)
+  scene.add(new HemisphereLight('#fff6ec', '#9a8b78', 1.25));
+  const key = new DirectionalLight('#ffeedd', 1.45);
   key.position.set(4, 10, 3);
   scene.add(key);
+  const fill = new DirectionalLight('#dfe8ff', 0.35);
+  fill.position.set(-6, 6, -8);
+  scene.add(fill);
 
-  // Döşeme: açık taş karo
-  const floorTex = own(tileTexture());
-  floorTex.repeat.set(W / 1.2, D / 1.2);
-  const floor = new Mesh(own(new PlaneGeometry(W, D).rotateX(-Math.PI / 2)), own(new MeshStandardMaterial({ map: floorTex, roughness: 0.35, metalness: 0.05 })));
+  // Döşeme: sıcak meşe parke (açık taş karo sahneyi fazla beyaz yapıyordu)
+  const floorTex = own(woodTexture());
+  floorTex.repeat.set(W / 2, D / 2);
+  const floor = new Mesh(own(new PlaneGeometry(W, D).rotateX(-Math.PI / 2)), own(new MeshStandardMaterial({ map: floorTex, roughness: 0.48, metalness: 0.02 })));
   floor.position.set(0, 0, -D / 2);
   scene.add(floor);
 
   // Duvarlar (ön duvarda 2,4 m kapı boşluğu), tavan, renk şeridi
-  const wallMat = own(new MeshStandardMaterial({ color: '#f3f1ec', roughness: 0.9 }));
+  const wallMat = own(new MeshStandardMaterial({ color: '#d8cfc2', roughness: 0.92 }));
+  const backMat = own(new MeshStandardMaterial({ color: '#4a5058', roughness: 0.85 }));
   const accentMat = own(new MeshStandardMaterial({ color: opts.accent, roughness: 0.6 }));
   const box = (w: number, h: number, d: number, x: number, y: number, z: number, mat: MeshStandardMaterial) => {
     const m = new Mesh(own(new BoxGeometry(w, h, d)), mat);
@@ -142,7 +164,7 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
     scene.add(m);
     return m;
   };
-  box(W, WALL_H, 0.2, 0, WALL_H / 2, -D - 0.1, wallMat);
+  box(W, WALL_H, 0.2, 0, WALL_H / 2, -D - 0.1, backMat);
   box(0.2, WALL_H, D, -W / 2 - 0.1, WALL_H / 2, -D / 2, wallMat);
   box(0.2, WALL_H, D, W / 2 + 0.1, WALL_H / 2, -D / 2, wallMat);
   const side = (W - 2.4) / 2;
@@ -152,7 +174,7 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
   box(W, 0.35, 0.02, 0, 3.55, -D + 0.01, accentMat);
   box(0.02, 0.35, D, -W / 2 + 0.01, 3.55, -D / 2, accentMat);
   box(0.02, 0.35, D, W / 2 - 0.01, 3.55, -D / 2, accentMat);
-  const ceiling = new Mesh(own(new PlaneGeometry(W, D).rotateX(Math.PI / 2)), own(new MeshStandardMaterial({ color: '#fbfaf8', roughness: 1 })));
+  const ceiling = new Mesh(own(new PlaneGeometry(W, D).rotateX(Math.PI / 2)), own(new MeshStandardMaterial({ color: '#b3aea6', emissive: '#3a3833', roughness: 0.95 })));
   ceiling.position.set(0, WALL_H, -D / 2);
   scene.add(ceiling);
   // Tavan ışık panelleri (kendi ışığı)
@@ -182,7 +204,7 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
     for (const s of [-1, 1]) parts.push(new BoxGeometry(0.92, 2.0, 0.04).translate(g.x, 1.0, g.z + (s * L) / 2));
   }
   if (parts.length) {
-    const shelves = new Mesh(own(mergeGeometries(parts)!), own(new MeshStandardMaterial({ color: '#d9dde2', roughness: 0.45, metalness: 0.35 })));
+    const shelves = new Mesh(own(mergeGeometries(parts)!), own(new MeshStandardMaterial({ color: '#6b7178', roughness: 0.5, metalness: 0.15 })));
     scene.add(shelves);
     for (const p of parts) p.dispose();
   }
@@ -195,7 +217,8 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
     canvas.width = LO.w;
     canvas.height = LO.h;
     const tex = makeTex(canvas);
-    const mat = new MeshStandardMaterial({ map: tex, roughness: 0.6, transparent: true, alphaTest: 0.02 });
+    // Kartlar kendi ışığını hafifçe taşır: açıya göre grileşmez, görseller canlı kalır
+    const mat = new MeshStandardMaterial({ map: tex, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.22, roughness: 0.85, transparent: true, alphaTest: 0.02 });
     const geo = new PlaneGeometry(SHELF.cols * SHELF.pitch, SHELF.rows * SHELF.rowHeight).rotateY(f.side > 0 ? Math.PI / 2 : -Math.PI / 2);
     own(geo);
     own(mat);
@@ -269,10 +292,13 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
         selectFrame.mesh.scale.set(k, k, 1);
         (selectFrame.mesh.material as MeshBasicMaterial).opacity = 0.75 + Math.sin(t * 5) * 0.25;
       }
+      // Yüksek çözünürlük yalnız en yakın MAX_HI yüze (bellek: yüz başına ≈ 11 MB); sıra eşiği gecikmeli
+      const rank = faces.map((f) => ({ f, d: Math.hypot(f.center[0] - x, f.center[2] - z) })).sort((a, b) => a.d - b.d);
+      rank.forEach(({ f, d }, i) => {
+        if (!f.hi && d < NEAR && i < MAX_HI) setDetail(f, true);
+        else if (f.hi && (d > FAR || i >= MAX_HI + 2)) setDetail(f, false);
+      });
       for (const f of faces) {
-        const d = Math.hypot(f.center[0] - x, f.center[2] - z);
-        if (!f.hi && d < NEAR) setDetail(f, true);
-        else if (f.hi && d > FAR) setDetail(f, false);
         if (f.dirty) {
           f.tex.needsUpdate = true;
           f.dirty = false;
@@ -343,7 +369,7 @@ export function buildInterior(data: InteriorData, opts: { environment: Texture |
 function makeTex(canvas: HTMLCanvasElement): CanvasTexture {
   const t = new CanvasTexture(canvas);
   t.colorSpace = SRGBColorSpace;
-  t.anisotropy = 8;
+  t.anisotropy = 16;
   return t;
 }
 
@@ -362,11 +388,16 @@ function setDetail(f: Face, hi: boolean) {
   if (hi) {
     f.products.forEach((p, i) => {
       if (!p.thumb) return;
-      loadImage(p.thumb, (img) => {
+      const ready = (img: HTMLImageElement) => {
         if (!f.hi) return;
         drawCell(f, i, img);
         f.dirty = true;
-      });
+      };
+      const thumb = p.thumb;
+      const med = mediumOf(thumb);
+      // Önce küçük (önbellekte hazırsa hemen), sonra orta boy; orta boy yoksa küçükte kalınır
+      if (med === thumb) return loadImage(thumb, ready);
+      loadImage(med, ready, () => loadImage(thumb, ready));
     });
   }
 }
@@ -380,8 +411,9 @@ function drawFace(f: Face) {
 /** Hücreyi yeniden çizer (yakındaysa önbellekteki görselle) */
 function redrawCell(f: Face, i: number) {
   const thumb = f.products[i]!.thumb;
-  const cached = f.hi && thumb ? images.get(thumb) : undefined;
-  drawCell(f, i, cached && cached !== 'error' && cached.complete && cached.naturalWidth > 0 ? cached : undefined);
+  const ok = (c: HTMLImageElement | 'error' | undefined) => (c && c !== 'error' && c.complete && c.naturalWidth > 0 ? c : undefined);
+  const cached = f.hi && thumb ? (ok(images.get(mediumOf(thumb))) ?? ok(images.get(thumb))) : undefined;
+  drawCell(f, i, cached);
   f.dirty = true;
 }
 
@@ -405,8 +437,9 @@ function drawCell(f: Face, i: number, img?: HTMLImageElement) {
   ctx.fillStyle = '#ffffff';
   roundRect(ctx, x, y, w, h, w * 0.06);
   ctx.fill();
-  const imgH = h * (f.hi ? 0.56 : 0.66);
+  const imgH = h * (f.hi ? 0.6 : 0.66);
   if (img) {
+    ctx.imageSmoothingQuality = 'high';
     const k = Math.min((w - 8) / img.naturalWidth, (imgH - 8) / img.naturalHeight);
     const iw = img.naturalWidth * k;
     const ih = img.naturalHeight * k;
@@ -470,20 +503,43 @@ function signMesh(
   return m;
 }
 
-function tileTexture(): CanvasTexture {
+/** Meşe parke: rastgele tonlu, eklemleri kaydırılmış tahtalar, ince damar */
+function woodTexture(): CanvasTexture {
   const cv = document.createElement('canvas');
-  cv.width = cv.height = 256;
+  cv.width = cv.height = 512;
   const ctx = cv.getContext('2d')!;
-  ctx.fillStyle = '#d9d3c7';
-  ctx.fillRect(0, 0, 256, 256);
-  ctx.fillStyle = '#e4dfd5';
-  ctx.fillRect(4, 4, 248, 248);
-  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
-  ctx.strokeRect(2, 2, 252, 252);
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const rows = 8;
+  const rh = 512 / rows;
+  for (let r = 0; r < rows; r++) {
+    let x = -rnd() * 256;
+    while (x < 512) {
+      const len = 200 + rnd() * 140;
+      const l = 0.9 + rnd() * 0.14;
+      ctx.fillStyle = `rgb(${Math.round(168 * l)},${Math.round(140 * l)},${Math.round(108 * l)})`;
+      ctx.fillRect(x, r * rh, len, rh);
+      // Damar
+      ctx.strokeStyle = 'rgba(70,42,20,0.10)';
+      ctx.lineWidth = 1;
+      for (let k = 0; k < 5; k++) {
+        const y = r * rh + 4 + rnd() * (rh - 8);
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.bezierCurveTo(x + len * 0.3, y + (rnd() - 0.5) * 6, x + len * 0.7, y + (rnd() - 0.5) * 6, x + len, y);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(40,24,12,0.35)';
+      ctx.fillRect(x, r * rh, 2, rh);
+      x += len;
+    }
+    ctx.fillStyle = 'rgba(40,24,12,0.30)';
+    ctx.fillRect(0, r * rh, 512, 1.5);
+  }
   const t = new CanvasTexture(cv);
   t.wrapS = t.wrapT = RepeatWrapping;
   t.colorSpace = SRGBColorSpace;
-  t.anisotropy = 8;
+  t.anisotropy = 16;
   return t;
 }
 
