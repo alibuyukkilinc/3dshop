@@ -5,7 +5,8 @@ import { decryptSecret } from '../../../infra/crypto/secrets.js';
 import { PrismaService } from '../../../infra/db/prisma.service.js';
 import { CatalogIngest, CatalogPriceExpiry } from '../../catalog/public/index.js';
 import { isCircuitOpen, nextCircuitState } from '../domain/circuit.js';
-import { productContentHash } from '../domain/content-hash.js';
+import { productContentHash, stableStringify } from '../domain/content-hash.js';
+import type { Prisma } from '../../../generated/prisma/client.js';
 import { EticaretProductSchema } from '../domain/eticaret/export-schema.js';
 import { toProductV1 } from '../domain/eticaret/to-product-v1.js';
 import { lastReconcileAt } from '../domain/schedule.js';
@@ -29,6 +30,8 @@ export interface SyncStats {
    * date_updated'i değiştirmediği için fiyatta sapma beklenir; kalan sapma webhook gelene kadar izlenir.
    */
   drift_ids?: string[];
+  /** Güncellenen ürünlerde hangi alanın değiştiği: price, stock, variants… (uzlaştırma teşhisi, K6) */
+  changed_fields?: Record<string, number>;
 }
 
 export interface ExportSource {
@@ -138,6 +141,7 @@ export class SourceSyncService {
           if (r.outcome === 'invalid' && stats.invalid_ids.length < 20) stats.invalid_ids.push(r.externalId ?? '?');
           if (r.outcome === 'unchanged') unchangedIds.push(r.externalId!);
           if ((r.outcome === 'created' || r.outcome === 'updated') && drift.length < MAX_DRIFT_IDS) drift.push(r.externalId!);
+          for (const f of r.changedFields ?? []) (stats.changed_fields ??= {})[f] = (stats.changed_fields[f] ?? 0) + 1;
         }
         if (unchangedIds.length) {
           await this.prisma.sourceRecord.updateMany({
@@ -241,7 +245,7 @@ export class SourceSyncService {
   private async processItem(
     site: SiteRow,
     item: unknown,
-  ): Promise<{ outcome: Outcome; externalId: string | null; dateUpdated: string | null }> {
+  ): Promise<{ outcome: Outcome; externalId: string | null; dateUpdated: string | null; changedFields?: string[] }> {
     const parsed = EticaretProductSchema.safeParse(item);
     if (!parsed.success) return { outcome: 'invalid', externalId: rawId(item), dateUpdated: null };
     const product = toProductV1(parsed.data, site.code);
@@ -252,6 +256,14 @@ export class SourceSyncService {
 
     const record = await this.prisma.sourceRecord.findUnique({ where: key });
     if (record && record.contentHash === hash && !record.deletedAtSource) return { outcome: 'unchanged', externalId, dateUpdated };
+
+    // Saklanan son içerikle alan alan karşılaştırma: gece uzlaştırmasının neyi yakaladığı görülsün
+    const content: Record<string, unknown> = { ...product };
+    delete content.source;
+    const before = record?.content as Record<string, unknown> | null | undefined;
+    const changedFields = before
+      ? Object.keys(content).filter((k) => stableStringify(before[k]) !== stableStringify(content[k]))
+      : undefined;
 
     const now = new Date();
     const actor = adapterActor(site.code);
@@ -265,14 +277,15 @@ export class SourceSyncService {
           entity: 'product',
           externalId,
           contentHash: hash,
+          content: content as Prisma.InputJsonValue,
           sourceUpdatedAt: dateUpdated,
           lastSeenAt: now,
         },
-        update: { contentHash: hash, sourceUpdatedAt: dateUpdated, lastSeenAt: now, deletedAtSource: null },
+        update: { contentHash: hash, content: content as Prisma.InputJsonValue, sourceUpdatedAt: dateUpdated, lastSeenAt: now, deletedAtSource: null },
       });
       return result;
     });
-    return { outcome, externalId, dateUpdated };
+    return { outcome, externalId, dateUpdated, changedFields };
   }
 
   /** Tam eşitlemede görülmeyen ürünler "kaynakta yok" olur (silinmez). İşaretlenen kimlikleri döner. */

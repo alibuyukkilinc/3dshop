@@ -130,6 +130,7 @@ describe.skipIf(!hasDatabase)('kaynak eşitleme (F1.1, K41, K42)', () => {
     expect(source.queries[0]!.updatedSince).toBe('2026-11-05 09:58:05');
     // 101 örtüşme penceresinde tekrar gelir ama değişmediği için yazılmaz
     expect(stats).toMatchObject({ fetched: 2, updated: 1, unchanged: 1 });
+    expect(stats.changed_fields).toEqual({ stock: 1 }); // teşhis: yalnız stok değişti
     expect(await events('catalog.product.updated')).toBe(1);
     const stock = await prisma.catalogStock.findFirstOrThrow({ where: { product: { externalId: '103' } } });
     expect(stock.status).toBe('out_of_stock');

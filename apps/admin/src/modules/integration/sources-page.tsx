@@ -14,6 +14,7 @@ interface RunStats {
   removed?: number;
   invalid?: number;
   drift_ids?: string[];
+  changed_fields?: Record<string, number>;
 }
 export interface Source {
   id: string;
@@ -352,6 +353,7 @@ function SourceDetail({ source, canWrite }: { source: Source; canWrite: boolean 
               >
                 Sapma
               </th>
+              <th className="py-1 font-medium">Değişen alanlar</th>
             </tr>
           </thead>
           <tbody>
@@ -370,6 +372,11 @@ function SourceDetail({ source, canWrite }: { source: Source; canWrite: boolean 
                 <td className="py-1 text-right tabular-nums">{r.stats.removed ?? 0}</td>
                 <td className="py-1 text-right tabular-nums">
                   {r.kind === 'full' ? (r.stats.drift_ids?.length ?? 0) : '—'}
+                </td>
+                <td className="py-1 text-muted">
+                  {Object.entries(r.stats.changed_fields ?? {})
+                    .map(([f, n]) => `${f} ${n}`)
+                    .join(', ')}
                 </td>
               </tr>
             ))}

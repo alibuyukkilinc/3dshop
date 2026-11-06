@@ -4,6 +4,7 @@ import { notFound, permanentRedirect } from 'next/navigation';
 import { PriceTag } from '../../../../components/price-tag';
 import { NotFound, type Product, apiGet } from '../../../../lib/api';
 import { formatMinor, minorToDecimal, productPath, slug as toSlug, timeAgo } from '../../../../lib/format';
+import { responsiveImage } from '../../../../lib/images';
 import { siteUrl } from '../../../../lib/site';
 
 export const revalidate = 60;
@@ -87,7 +88,8 @@ export default async function ProductPage({ params }: { params: Params }) {
           <div className="aspect-square w-full overflow-hidden rounded-lg border border-line bg-white">
             {p.images[0] ? (
               <img
-                src={p.images[0]}
+                {...responsiveImage(p.images[0], 'detail')}
+                sizes="(min-width: 768px) 50vw, 100vw"
                 alt={p.name}
                 width={800}
                 height={800}
@@ -102,7 +104,7 @@ export default async function ProductPage({ params }: { params: Params }) {
             <ul className="mt-3 grid grid-cols-5 gap-2">
               {p.images.slice(1, 11).map((src, i) => (
                 <li key={src} className="aspect-square overflow-hidden rounded border border-line bg-white">
-                  <img src={src} alt={`${p.name} — görsel ${i + 2}`} width={160} height={160} loading="lazy" decoding="async" className="h-full w-full object-contain p-1" />
+                  <img {...responsiveImage(src, 'thumb')} alt={`${p.name} — görsel ${i + 2}`} width={160} height={160} loading="lazy" decoding="async" className="h-full w-full object-contain p-1" />
                 </li>
               ))}
             </ul>

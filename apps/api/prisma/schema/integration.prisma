@@ -61,6 +61,8 @@ model SourceRecord {
   entity          String
   externalId      String     @map("external_id")
   contentHash     String     @map("content_hash")
+  /// Son içerik (commerce.product.v1, source hariç): değişen alanların teşhisi için. Alış fiyatı içermez (K41).
+  content         Json?
   sourceUpdatedAt String     @map("source_updated_at")
   lastSeenAt      DateTime   @map("last_seen_at") @db.Timestamptz(3)
   deletedAtSource DateTime?  @map("deleted_at_source") @db.Timestamptz(3)

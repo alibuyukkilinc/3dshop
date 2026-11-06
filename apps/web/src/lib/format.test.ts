@@ -15,3 +15,17 @@ describe('vitrin biçimleri', () => {
     expect(slug('!!!')).toBe('urun');
   });
 });
+
+describe('duyarlı görseller (K4)', async () => {
+  const { responsiveImage } = await import('./images');
+  it('_high kalıbında küçük varyant ve srcset; kalıp dışı aynen', () => {
+    const u = 'https://cdn.shopyplus.com/x.com/products/2026-05/a-p1_high.webp';
+    expect(responsiveImage(u, 'card')).toEqual({
+      src: 'https://cdn.shopyplus.com/x.com/products/2026-05/a-p1_medium.webp',
+      srcSet: 'https://cdn.shopyplus.com/x.com/products/2026-05/a-p1_medium.webp 340w, https://cdn.shopyplus.com/x.com/products/2026-05/a-p1_high.webp 800w',
+    });
+    expect(responsiveImage(u, 'detail').src).toBe(u);
+    expect(responsiveImage(u, 'thumb')).toEqual({ src: 'https://cdn.shopyplus.com/x.com/products/2026-05/a-p1_medium.webp' });
+    expect(responsiveImage('https://cdn.shopyplus.com/solarbank.com.tr/2026-09/hp5.png', 'card')).toEqual({ src: 'https://cdn.shopyplus.com/solarbank.com.tr/2026-09/hp5.png' });
+  });
+});

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { ProductCard as Card } from '../lib/api';
 import { productPath } from '../lib/format';
+import { responsiveImage } from '../lib/images';
 import { PriceTag } from './price-tag';
 
 /** Ürün kartı. Görsel kutusu sabit oranlı: görsel geç gelse de yerleşim kaymaz (K4, CLS). */
@@ -12,7 +13,8 @@ export function ProductCard({ product, priority = false, storeName }: { product:
           {product.image ? (
             // Kaynak sitelerin görselleri: boyutlar bilinmediği için kutu sabit, görsel içine sığdırılır
             <img
-              src={product.image}
+              {...responsiveImage(product.image, 'card')}
+              sizes="(min-width: 1280px) 25vw, (min-width: 640px) 33vw, 50vw"
               alt=""
               width={400}
               height={400}
